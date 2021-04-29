@@ -12,7 +12,6 @@ function filterNodeList<T extends Element>(
     predicate: (t: T, index?: number) => boolean = (t: Element) => true): T[] {
 
         let all: NodeListOf<Element> = source.querySelectorAll(selector);
-        console.log(all);
         let goal: T[] = [];
         for(let i = 0; i < all.length; i++) {
             if(predicate(all[i] as T, i)) {
@@ -49,20 +48,29 @@ var musicsvg = abc2svg(music, {add_classes: true });
 musicsvg.setAttribute("id", "yourfriendthesvg");
 let moving = getMovingSprites(musicsvg);
 
-
 let notes = getPlayableNotes(musicsvg);
 notes.forEach((n: SVGPathElement) => { n.setAttribute("fill", "red") });
-//notes.map((n) => n.)
+let noteOffsets = notes.map( (n) => n.getBBox().x);
+const TARGET_X = noteOffsets[0];
+let targetNote = 0;
 
-
-console.log(moving);
 let anim = function(s: SVGElement[], max: number) {
     let t = 0;
     return function() {
         if(t < max) {
             t += 0.5;
         }
-        console.log(notes[0].getBBox().x);
+
+        const nextOffset = (n: number) => n + 1 < noteOffsets.length ? n + 1 : n;
+        let currentNoteDistance = Math.abs((noteOffsets[targetNote] - t) - TARGET_X);
+        let nextIndex = nextOffset(targetNote);
+        let nextNoteDistance = Math.abs((noteOffsets[nextIndex] - t) - TARGET_X);
+
+        if(nextNoteDistance < currentNoteDistance) {
+            targetNote = nextOffset(targetNote);
+            console.log(targetNote);
+        }
+
         s.forEach((el: SVGElement) => {
             el.setAttribute("transform", `translate(${-1*t} 0)`);
         })
