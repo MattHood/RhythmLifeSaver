@@ -1,4 +1,4 @@
-import abcjs from "./include/abcjs/index.js"
+import abcjs from "../include/abcjs/index.js"
 
 interface ABCParserParams {
     add_classes?: boolean
