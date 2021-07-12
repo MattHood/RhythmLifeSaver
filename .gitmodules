@@ -1,3 +1,0 @@
-[submodule "include/abcjs"]
-	path = include/abcjs
-	url = https://github.com/paulrosen/abcjs.git

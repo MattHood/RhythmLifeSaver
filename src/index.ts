@@ -209,12 +209,11 @@ class Scene {
     draw() {
         this.clear();
         this.ctx.drawImage(this.music.fixedRender, 0, 0);
-        this.ctx.drawImage(this.music.movingRender, -1 * this.music.translation, 0);
+        this.ctx.drawImage(this.music.movingRender, 0, 0);
     }
 
     animate() {
-        this.elapsedTime += 0.25;
-        this.music.translation = this.elapsedTime;
+        
         this.draw();
     }
 
