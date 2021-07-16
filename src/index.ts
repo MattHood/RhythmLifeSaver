@@ -48,11 +48,11 @@ function svgBBox (svgEl) {
   }
 
 function sizeSVGByContent(el: SVGElement): void {
-    var bbox = svgBBox(el);
-    el.setAttribute("width", bbox.width + "px");
-    el.setAttribute("height", bbox.height + "px");
-    el.setAttribute("viewBox", `${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`);
-    el.setAttribute("preserveAspectRatio", "none");
+  var bbox = svgBBox(el);
+  el.setAttribute("width", bbox.width*8 + "px");
+  el.setAttribute("height", bbox.height*8 + "px");
+  el.setAttribute("viewBox", `${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`);
+    //el.setAttribute("preserveAspectRatio", "none");
 }
 
 function extractBySelector(element: SVGElement, selector: string): SVGElement {
@@ -66,113 +66,154 @@ function extractBySelector(element: SVGElement, selector: string): SVGElement {
     return newSVG;
 }
 
-function serializeSVG(element: SVGElement): string {
-    let xml = new XMLSerializer().serializeToString(element);
-
-    // The following was copy-pasted from https://developer.mozilla.org/en-US/docs/Glossary/Base64
-    function b64EncodeUnicode(str) {
-        return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function(match, p1) {
-            return String.fromCharCode('0x' + p1);
-        }));
-    }
-
-    let base64 = b64EncodeUnicode(xml);
-    let output = `data:image/svg+xml;base64,${base64}`
-    return output;
-}
-
-function SVG2Image(element: SVGElement, scale: number = 4): HTMLImageElement {
-    let img = <HTMLImageElement>document.createElement("img");
-    let oldWidth = parseFloat(element.getAttribute('width'));
-    let oldHeight = parseFloat(element.getAttribute('height'));
-    element.setAttribute('width', (oldWidth * scale).toString());
-    element.setAttribute('height', (oldHeight * scale).toString());
-    let text = serializeSVG(element);
-    img.src = text;
-    
-    return img;
-}
-
-// Too blurry
-function img2Canvas(img: HTMLImageElement): HTMLCanvasElement {
-    let canvas = <HTMLCanvasElement>document.createElement("canvas");
-    let ctx = canvas.getContext("2d");
-    // Resize, compensating for HiDPI displays
-    // https://stackoverflow.com/questions/41528103/drawimage-generates-bad-quality-compared-to-img-tag
-    canvas.width = img.width * window.devicePixelRatio;
-    canvas.height = img.height * window.devicePixelRatio;
-    canvas.style.width = (canvas.width / window.devicePixelRatio).toString() + "px";
-    canvas.style.height = (canvas.height / window.devicePixelRatio).toString() + "px";
-    ctx.drawImage(img, 0, 0);
-    return canvas;
-}
-
 function loadLilypondSVG(path: string): SVGElement {
     let containerDiv = document.createElement("div");
-    let svg_string = readFileSync("Lilypond/test2.svg", 'utf8');
+    let svg_string = readFileSync("Lilypond/test3-2.svg", 'utf8');
     containerDiv.innerHTML = svg_string;
     let tsvg = containerDiv.querySelector("svg") as SVGElement;
     //tsvg.querySelectorAll("g").forEach((gtag) => propogateClassToChildren(gtag));
     return tsvg;
 }
 
-function getMovingSprites(render: SVGElement): SVGElement[] {
-    let moveable: SVGElement[] = filterNodeList(render, ":not(.StaffSymbol):not(.TimeSignature):not(.Clef):not(style):not(g):not(tspan)");
-    return moveable;
-}
-
 function getNoteheads(music: SVGElement): SVGRectElement[] {
     return filterNodeList<SVGRectElement>(music, "g.NoteHead > rect");
 }
 
-var docsvg = document.querySelector("svg#parent");
-
-interface Note { type: "A", offset: number };
-
-function getXTransform(el: SVGElement) {
-    let transform = el.getAttribute("transform");
-    let re = /translate\((\d*.\d*)\,\s*\d*\.\d*\)/g;
-    return parseFloat(re.exec(transform)[1]);
+function removeEmptyGTags(doc: SVGElement): void {
+  let g = filterNodeList<SVGGElement>(doc, "g");
+  g.forEach( (el) => {
+    if(el.childElementCount == 0) {
+      el.remove();
+    }
+  });
 }
 
-function parseNote(noteObject: SVGRectElement): Note {
-    return { type: "A", offset: getXTransform(noteObject)};
+
+var docsvg = document.querySelector("svg#parent");
+
+interface Note { type: "A", x: number, y: number };
+
+function getXTransform(el: Element): number | null {
+  const transform = el.getAttribute("transform");
+  let re = /translate\((-?\d*.\d*)\,\s*-?\d*\.\d*\)/;
+  re.lastIndex = 0;
+  const result = re.exec(transform);
+  if(result) {
+    return parseFloat(result[1]);
+  }
+  else {
+    console.error("Tried to get the X-transform of an element that does not posess such an attribute. ");
+    return null;
+  }
+}
+
+function getYTransform(el: Element): number | null {
+  const transform = el.getAttribute("transform");
+  let re = /translate\(-?\d*.\d*\,\s*(-?\d*\.\d*)\)/;
+  re.lastIndex = 0;
+  const result = re.exec(transform);
+  if(result) {
+    return parseFloat(result[1]);
+  }
+  else {
+    console.warn("Tried to get the Y-transform of an element that does not posess such an attribute. ");
+    return null;
+  }
+}
+
+function setXTransform(el: Element, updated: number) {
+  let y = getYTransform(el);
+  if(y == null) { y = 0; }
+  
+}
+
+function setYTransform(el: Element, updated: number) {
+
+}
+
+function sortByXPosition(doc: SVGElement):void {
+  let gEls = filterNodeList<SVGGElement>(doc, "g");
+  gEls.sort( function(g1, g2) {
+    let a = getXTransform(<Element>g1.firstElementChild);
+    let b = getXTransform(<Element>g2.firstElementChild);
+    return a - b;
+  });
+  gEls.forEach( (el) => doc.appendChild(el) );
+}
+
+function setCountBaseline(doc: SVGElement, baseline: number): void {
+  let counts = filterNodeList<SVGTextElement>(doc, "g.TextScript > text");
+  let noteheadPosition = getYTransform(<SVGPathElement>doc.querySelector("g.NoteHead > path"));
+  counts.forEach( (c) => setYTransform(c, noteheadPosition + baseline) );
+}
+
+function parseNote(noteObject: SVGPathElement): Note {
+  return { type: "A", x: getXTransform(noteObject), y: getYTransform(noteObject)};
+}
+
+function textBelowNote(note: Note, text: string) {
+  let el = document.createElementNS(SVGNamespace, "text");
+  el.innerHTML = text;
+  el.setAttribute("transform", `translate(${note.x},${note.y + 5})`);
+  el.setAttribute("font-size", "3");
+  el.setAttribute("font-style", "bold");
+  return el;
+}
+
+interface Count {
+  display: string;
+  beat: number;
+  dom: SVGTextElement;
+}
+
+function parseLilypondEvents(allEvents: string): Omit<Count, "dom">[] {
+  let tokenized = allEvents.split('\n').map((line) => line.split('\t'));
+  let textEvents = tokenized.filter((line) => line[1] == "text");
+  return textEvents.map( (e) => ({ display: e[2], beat: parseFloat(e[0])}) );
+}
+
+function zipLilypondEventsAndDom(e: Omit<Count, "dom">[], d: SVGTextElement[]): Count[] {
+  if(e.length != d.length) {
+    console.error("Lengths of Lilypond text events and corresponding DOM elements are mismatched.");
+  }
+  return e.map( (evt, index) => ({...evt, dom: d[index]}));
 }
 
 const movingGraphicsSelector = ":scope > :not(.StaffSymbol):not(.TimeSignature):not(.Clef):not(style):not(tspan)";
 const fixedGraphicsSelector = ":scope > .StaffSymbol, .TimeSignature, .Clef";
+const counting = ['1', '3', 'e', '+', 'a', '4', 'e', '+', 'e', 'a'];
+const commonTimeDownbeats = ['1', '2', '3', '4'];
+
 
 class RenderedMusic {
     musicSVG: SVGElement;
-    movingGraphics: SVGElement;
-    fixedGraphics: SVGElement;
-    movingRender: HTMLImageElement;
-    fixedRender: HTMLImageElement;
+
     noteObjects: Note[];
-    translation: number = 0;
     constructor() {
-        this.musicSVG = loadLilypondSVG("Lilypond/test2.svg");
-        
-        this.movingGraphics = extractBySelector(this.musicSVG, movingGraphicsSelector);
-        this.fixedGraphics = extractBySelector(this.musicSVG, fixedGraphicsSelector);
-        this.movingRender = SVG2Image(this.movingGraphics, LilypondSVGScaleFactor);
-        this.fixedRender = SVG2Image(this.fixedGraphics, LilypondSVGScaleFactor);
+      this.musicSVG = loadLilypondSVG("Lilypond/test2.svg");
+      removeEmptyGTags(this.musicSVG);
+      sortByXPosition(this.musicSVG);
+      sizeSVGByContent(this.musicSVG);
+      this.noteObjects = filterNodeList<SVGPathElement>(this.musicSVG, "g.Notehead > path")
+        .map(parseNote)
+        .sort((a, b) => a.x - b.x);
+      console.log(this.noteObjects);
+     /* this.noteObjects.forEach(
+        (note, index) =>
+          {
+            console.log(note);
+            this.musicSVG.appendChild(textBelowNote(note, counting[index]))
+          });*/
 
-        window.debugMusic = this;
     }
 
-    get scoreWidth(): number {
+  get scoreWidth(): number {
         return parseFloat(this.musicSVG.getAttribute("width"));
-    }
+  }
 
-    get metaNotes(): Note[] {
-        return getNoteheads(this.movingGraphics).map(parseNote).sort((a, b) => a.offset - b.offset);
-    }
-
-
-    get targetX(): number {
-        return this.metaNotes[0].offset - 10;
-    }
+  get content(): SVGElement {
+    return this.musicSVG;
+  }
 
 }
 
@@ -184,66 +225,20 @@ class RenderedMusic {
 // let targetNote = 0;
 
 class Scene {
-    canvas: HTMLCanvasElement;
+    parent: HTMLDivElement;
     music: RenderedMusic;
-    ctx: CanvasRenderingContext2D;
-    animationInProgress: boolean = false;
-    elapsedTime: number = 0;
-    timer: number;
-
-    constructor(_canvas: HTMLCanvasElement) {
-        this.canvas = _canvas;
-        this.ctx = this.canvas.getContext("2d");
-        this.music = new RenderedMusic();
 
 
-        //document.addEventListener("keydown", this.animate.bind(this));
-        this.draw();
-        //this.beginAnimation();
+    constructor(_parent: HTMLDivElement) {
+      this.parent = _parent;
+      this.music = new RenderedMusic();
+      this.parent.appendChild(this.music.content);
+      
     }
 
-    clear() {
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    }
-
-    draw() {
-        this.clear();
-        this.ctx.drawImage(this.music.fixedRender, 0, 0);
-        this.ctx.drawImage(this.music.movingRender, 0, 0);
-    }
-
-    animate() {
-        
-        this.draw();
-    }
-
-    beginAnimation() {
-        this.elapsedTime = 0;
-        this.timer = window.setInterval((() => this.animate()).bind(this), 1/30);
-        this.animationInProgress = true;
-    }
-
-    endAnimation() {
-        window.clearInterval(this.timer);
-        this.elapsedTime = 0;
-        this.animationInProgress = false;
-    }
-
-    handler(event) {
-        console.log("We got there");
-        if(!this.animationInProgress) {
-            this.beginAnimation();
-        }
-        else if(event.key == "b") {
-            console.log("b");
-        }
-        else if(event.key == "s") {
-            this.endAnimation();
-        }
-    }
 }
 
-const parent = <HTMLCanvasElement>document.querySelector("canvas#music-canvas");
+const parent = <HTMLDivElement>document.querySelector("div#music-canvas");
 const scene = new Scene(parent);
 
 
