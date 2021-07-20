@@ -6,13 +6,11 @@
 %% Options: [exampleindent=10.16\mm,indent=0\mm,line-width=160\mm,quote,ragged-right]
 %%\include "lilypond-book-preamble.ly"
 
-\include "event-listener.ly"
+\include "my-event-listener.ly"
 
 #(define (add-class grob grob-origin context)
          (let ((name (cdr (assoc 'name
                                 (ly:grob-property grob 'meta)))))
-            (display "\n")
-            (display name)
             (set! (ly:grob-property grob 'output-attributes) '((class . name)))))
 
 SvgAddClassName =
@@ -21,8 +19,6 @@ SvgAddClassName =
     (let* ((attribs (ly:grob-property grob 'output-attributes '()))
            (class (ly:assoc-get 'class attribs '()))
            (name (grob::name grob)))
-     (display "\n")
-     (display name)
      (set! class (if (null? class) name (format #f "~a ~a" class name)))
      (set! attribs (assoc-set! attribs 'class class))
      (ly:grob-set-property! grob 'output-attributes attribs)))

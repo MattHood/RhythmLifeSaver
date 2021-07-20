@@ -1,8 +1,9 @@
-import abcjs from "../include/abcjs/index.js"
 import {readFileSync} from 'fs'
 
 const SVGNamespace = "http://www.w3.org/2000/svg";
 const LilypondSVGScaleFactor = 8;
+const LilypondSVGId = "lilysvg";
+const DifficultyExponent = 8;
 
 // New strategy for smooth scrolling: seperate moving and static elements into separate SVGs, then blit them seperately to a canvas.
 
@@ -68,9 +69,10 @@ function extractBySelector(element: SVGElement, selector: string): SVGElement {
 
 function loadLilypondSVG(path: string): SVGElement {
     let containerDiv = document.createElement("div");
-    let svg_string = readFileSync("Lilypond/test3-2.svg", 'utf8');
+    let svg_string = readFileSync("Lilypond/test3.svg", 'utf8');
     containerDiv.innerHTML = svg_string;
     let tsvg = containerDiv.querySelector("svg") as SVGElement;
+    tsvg.setAttribute("id", LilypondSVGId);
     //tsvg.querySelectorAll("g").forEach((gtag) => propogateClassToChildren(gtag));
     return tsvg;
 }
@@ -121,43 +123,43 @@ function getYTransform(el: Element): number | null {
   }
 }
 
-function setXTransform(el: Element, updated: number) {
-  let y = getYTransform(el);
-  if(y == null) { y = 0; }
+function getParentWithId(el: Element, id: string): Element | undefined {
+  if(el == undefined) {
+    console.warn("Ran out of parent nodes to trial.");
+    return undefined;
+  }
+  else if(el.hasAttribute("id")) {
+    if(el.getAttribute("id") == id) {
+      return el;
+    }
+  }
+  else {
+    return getParentWithId(el.parentElement, id);
+  }
   
 }
 
-function setYTransform(el: Element, updated: number) {
-
+function positionScore(el: Element): number {
+  const parent = getParentWithId(el, LilypondSVGId);
+  const w = parseFloat(parent.getAttribute("width"));
+  const x = getXTransform(el);
+  const y = getYTransform(el);
+  return y*w + x;
 }
 
-function sortByXPosition(doc: SVGElement):void {
+function sortByPosition(doc: SVGElement):void {
   let gEls = filterNodeList<SVGGElement>(doc, "g");
   gEls.sort( function(g1, g2) {
-    let a = getXTransform(<Element>g1.firstElementChild);
-    let b = getXTransform(<Element>g2.firstElementChild);
+    let a = positionScore(<Element>g1.firstElementChild);
+    let b = positionScore(<Element>g2.firstElementChild);
     return a - b;
   });
   gEls.forEach( (el) => doc.appendChild(el) );
 }
 
-function setCountBaseline(doc: SVGElement, baseline: number): void {
-  let counts = filterNodeList<SVGTextElement>(doc, "g.TextScript > text");
-  let noteheadPosition = getYTransform(<SVGPathElement>doc.querySelector("g.NoteHead > path"));
-  counts.forEach( (c) => setYTransform(c, noteheadPosition + baseline) );
-}
 
 function parseNote(noteObject: SVGPathElement): Note {
   return { type: "A", x: getXTransform(noteObject), y: getYTransform(noteObject)};
-}
-
-function textBelowNote(note: Note, text: string) {
-  let el = document.createElementNS(SVGNamespace, "text");
-  el.innerHTML = text;
-  el.setAttribute("transform", `translate(${note.x},${note.y + 5})`);
-  el.setAttribute("font-size", "3");
-  el.setAttribute("font-style", "bold");
-  return el;
 }
 
 interface Count {
@@ -168,8 +170,22 @@ interface Count {
 
 function parseLilypondEvents(allEvents: string): Omit<Count, "dom">[] {
   let tokenized = allEvents.split('\n').map((line) => line.split('\t'));
-  let textEvents = tokenized.filter((line) => line[1] == "text");
+  let textEvents = tokenized.filter((line) => line[1] == "lyric");
   return textEvents.map( (e) => ({ display: e[2], beat: parseFloat(e[0])}) );
+}
+
+function truncateToOneSequence(textEvents: Omit<Count, "dom">[]): Omit<Count, "dom">[] {
+  // -1 So we match with 0 using the strict inequality;
+  let maxBeat = -1;
+  return textEvents.filter( (val) => {
+    if(val.beat > maxBeat) {
+      maxBeat = val.beat;
+      return true;
+    }
+    else {
+      return false;
+    }
+  });
 }
 
 function zipLilypondEventsAndDom(e: Omit<Count, "dom">[], d: SVGTextElement[]): Count[] {
@@ -181,30 +197,25 @@ function zipLilypondEventsAndDom(e: Omit<Count, "dom">[], d: SVGTextElement[]): 
 
 const movingGraphicsSelector = ":scope > :not(.StaffSymbol):not(.TimeSignature):not(.Clef):not(style):not(tspan)";
 const fixedGraphicsSelector = ":scope > .StaffSymbol, .TimeSignature, .Clef";
-const counting = ['1', '3', 'e', '+', 'a', '4', 'e', '+', 'e', 'a'];
-const commonTimeDownbeats = ['1', '2', '3', '4'];
 
 
 class RenderedMusic {
     musicSVG: SVGElement;
+    counts: Count[];
 
     noteObjects: Note[];
     constructor() {
-      this.musicSVG = loadLilypondSVG("Lilypond/test2.svg");
+      this.musicSVG = loadLilypondSVG("Lilypond/test3.svg");
+      const musicEventsFile = readFileSync("Lilypond/test3-unnamed-staff.notes");
       removeEmptyGTags(this.musicSVG);
-      sortByXPosition(this.musicSVG);
+      sortByPosition(this.musicSVG);
       sizeSVGByContent(this.musicSVG);
-      this.noteObjects = filterNodeList<SVGPathElement>(this.musicSVG, "g.Notehead > path")
-        .map(parseNote)
-        .sort((a, b) => a.x - b.x);
-      console.log(this.noteObjects);
-     /* this.noteObjects.forEach(
-        (note, index) =>
-          {
-            console.log(note);
-            this.musicSVG.appendChild(textBelowNote(note, counting[index]))
-          });*/
+      
+      const lilyEvents = truncateToOneSequence(parseLilypondEvents(musicEventsFile.toString()));
+      const domCounts = filterNodeList<SVGTextElement>(this.musicSVG, "g.LyricText > text");
+      this.counts = zipLilypondEventsAndDom(lilyEvents, domCounts);
 
+      console.log(this.counts);
     }
 
   get scoreWidth(): number {
@@ -214,8 +225,14 @@ class RenderedMusic {
   get content(): SVGElement {
     return this.musicSVG;
   }
-
 }
+
+// Animation:
+// Array, note times in ms, setTimout() for each
+// Array, switchover times; halfway between each note + edge case for last element, setTimeout() for each
+// Number, Index pointing to currentGoal note
+// Number Start time in ms from Date.prototype.getMilliseconds()?
+// Event handler, keypress, check current time - start time compared to current goal note.
 
 
 //let music1: RenderedMusic = new RenderedMusic();
@@ -223,62 +240,113 @@ class RenderedMusic {
 // let noteOffsets: number[] = music1.metaNotes.map( (n: Note) => n.offset);
 // const TARGET_X = music1.targetX;
 // let targetNote = 0;
+type Timer = number;
+class Animator {
+  counts: Count[];
+  noteTimes: number[];
+  noteTimers: Timer[];
+  transitionTimes: number[];
+  transitionTimers: Timer[];
+  goalNote: number;
+  startTime: number;
+
+  constructor(_counts: Count[], bpm: number) {
+    this.counts = _counts;
+    const beatLength = (60 / bpm) * 1000;
+    this.noteTimes = this.counts
+      .map( (c: Count) => c.beat )
+      .map( (t: number) => 4 * t * beatLength);
+    this.transitionTimes = this.counts
+      .slice(0, -1)
+      .map( (c: Count, i: number) => (c.beat + this.counts[i + 1].beat) / 2 )
+      .map( (t: number) => 4 * t * beatLength);
+    this.transitionTimes[this.counts.length - 1] = this.transitionTimes[this.counts.length - 1]
+  }
+
+  start() {
+    this.goalNote = 0;
+    this.counts
+      .map( (c: Count) => c.dom)
+      .forEach( (d: SVGTextElement) => d.setAttribute("fill", "darkGrey"));
+    this.startTime = Date.now();
+
+    type Func = (i: number) => void;
+    const curry = ( fn: Func, index: number ) => ( () => fn(index) ).bind( this );
+    const indexedTimer = ( time, index, fn ) => window.setTimeout( curry(fn, index), time );
+    const mapper = (fn) => ( (time, index) => indexedTimer(time, index, fn.bind(this)) );
+    this.noteTimers = this.noteTimes.map( mapper(this.revealCount) );
+    this.transitionTimers = this.transitionTimes.map( mapper(this.nextGoal) );
+
+    document.addEventListener("keydown", this.keyHandler.bind(this));
+  }
+
+  revealCount(i: number) {
+    this.counts[i].dom.setAttribute("font-weight", "bold");
+    this.counts[i].dom.setAttribute("font-size", "3.2");
+
+    if(i > 0) {
+      this.counts[i-1].dom.setAttribute("font-size", "2.4696");
+    }
+  }
+
+  nextGoal(i: number) {
+    this.goalNote = i + 1;
+  }
+
+  computeScore() {
+    const pressTime = Date.now();
+    const timeSinceStart = pressTime - this.startTime;
+    const window = this.transitionTimes[this.goalNote];
+    const worstPossibleScore = this.goalNote == 0 ? window : window / 2;
+    const rawScore = this.noteTimes[this.goalNote] - timeSinceStart;
+    console.log(`w: ${window} r: ${rawScore}`);
+    const score = Math.pow(( 1 - (rawScore / worstPossibleScore)), DifficultyExponent);
+    return score * 100;
+  }
+
+  setNoteColourToScore(score) {
+    let colour;
+    if(score < 95) {
+      colour = "red";
+    }
+    if(95 <= score && score < 105) {
+      colour = "darkGreen"
+    }
+    if(105 <= score) {
+      colour = "blue"
+    }
+    this.counts[this.goalNote].dom.setAttribute("fill", colour);
+  }
+
+  keyHandler(evt) {
+    const score = this.computeScore();
+    this.setNoteColourToScore(score);
+    console.log(`Score: ${score.toFixed(2)}%`);
+  }
+
+}
 
 class Scene {
     parent: HTMLDivElement;
     music: RenderedMusic;
+    animator: Animator;
 
 
     constructor(_parent: HTMLDivElement) {
       this.parent = _parent;
       this.music = new RenderedMusic();
-      this.parent.appendChild(this.music.content);
       
+      this.animator = new Animator(this.music.counts, 50);
+      let btn = document.createElement("button");
+      btn.innerHTML = "Start"
+      btn.onclick = this.animator.start.bind(this.animator);
+      
+      this.parent.appendChild(btn);
+      this.parent.appendChild(document.createElement("br"));
+      this.parent.appendChild(this.music.content);
     }
 
 }
 
 const parent = <HTMLDivElement>document.querySelector("div#music-canvas");
 const scene = new Scene(parent);
-
-
-
-
-// Global
-// let currentNoteDistance = 0;
-
-// let anim = function(R: RenderedMusic) {
-//     let t = 0;
-//     let noteOffsets: number[] = R.metaNotes.map(n => n.offset)
-//     return function() {
-//         if(t < R.scoreWidth) {
-//             t += 0.1;
-//         }
-
-//         const nextOffset = (n: number) => n + 1 < noteOffsets.length ? n + 1 : n;
-//         currentNoteDistance = Math.abs((noteOffsets[targetNote] - t) - TARGET_X);
-//         let nextIndex = nextOffset(targetNote);
-//         let nextNoteDistance = Math.abs((noteOffsets[nextIndex] - t) - TARGET_X);
-
-//         if(nextNoteDistance < currentNoteDistance) {
-//             targetNote = nextOffset(targetNote);
-//         }
-
-//         R.translation = t;
-//     }
-// }
-
-// let hasStarted: boolean = false;
-
-// // Event listener for tapping note, read currentNoteDistance to get error.
-// document.addEventListener("keydown", (event) => {
-//     if(!hasStarted) {
-//         setInterval(anim(music1), 1/30);
-//         hasStarted = true;
-//     }
-//     else if(event.key == "b") {
-//         console.log(currentNoteDistance);
-//     }
-// });
-
-// document.querySelector("rect#targetLine").setAttribute("x", `${TARGET_X}`);
