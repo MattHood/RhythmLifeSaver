@@ -26,14 +26,6 @@ function filterNodeList<T extends Element>(
         return goal;
 }
 
-function propogateClassToChildren(parent: SVGElement) {
-    let parentClass = parent.classList;
-    if(parent.hasChildNodes) {
-        let children = parent.querySelectorAll("rect, line, path, text, polygon");
-        children.forEach((n) => n.classList.add(parentClass.toString())); 
-    }
-}
-
 //https://stackoverflow.com/questions/28282295/getbbox-of-svg-when-hidden
 function svgBBox (svgEl) {
     let tempDiv = document.createElement('div')
@@ -56,17 +48,6 @@ function sizeSVGByContent(el: SVGElement): void {
     //el.setAttribute("preserveAspectRatio", "none");
 }
 
-function extractBySelector(element: SVGElement, selector: string): SVGElement {
-    let newSVG = <SVGElement>document.createElementNS(SVGNamespace, "svg");
-    element.querySelectorAll(selector).forEach(
-        (el: Element) => {
-            newSVG.appendChild(el);
-        }
-    );
-    sizeSVGByContent(newSVG);
-    return newSVG;
-}
-
 function loadLilypondSVG(path: string): SVGElement {
     let containerDiv = document.createElement("div");
     let svg_string = readFileSync("Lilypond/test3.svg", 'utf8');
@@ -77,10 +58,6 @@ function loadLilypondSVG(path: string): SVGElement {
     return tsvg;
 }
 
-function getNoteheads(music: SVGElement): SVGRectElement[] {
-    return filterNodeList<SVGRectElement>(music, "g.NoteHead > rect");
-}
-
 function removeEmptyGTags(doc: SVGElement): void {
   let g = filterNodeList<SVGGElement>(doc, "g");
   g.forEach( (el) => {
@@ -89,9 +66,6 @@ function removeEmptyGTags(doc: SVGElement): void {
     }
   });
 }
-
-
-var docsvg = document.querySelector("svg#parent");
 
 interface Note { type: "A", x: number, y: number };
 
@@ -157,11 +131,6 @@ function sortByPosition(doc: SVGElement):void {
   gEls.forEach( (el) => doc.appendChild(el) );
 }
 
-
-function parseNote(noteObject: SVGPathElement): Note {
-  return { type: "A", x: getXTransform(noteObject), y: getYTransform(noteObject)};
-}
-
 interface Count {
   display: string;
   beat: number;
@@ -194,10 +163,6 @@ function zipLilypondEventsAndDom(e: Omit<Count, "dom">[], d: SVGTextElement[]): 
   }
   return e.map( (evt, index) => ({...evt, dom: d[index]}));
 }
-
-const movingGraphicsSelector = ":scope > :not(.StaffSymbol):not(.TimeSignature):not(.Clef):not(style):not(tspan)";
-const fixedGraphicsSelector = ":scope > .StaffSymbol, .TimeSignature, .Clef";
-
 
 class RenderedMusic {
     musicSVG: SVGElement;
@@ -234,12 +199,6 @@ class RenderedMusic {
 // Number Start time in ms from Date.prototype.getMilliseconds()?
 // Event handler, keypress, check current time - start time compared to current goal note.
 
-
-//let music1: RenderedMusic = new RenderedMusic();
-
-// let noteOffsets: number[] = music1.metaNotes.map( (n: Note) => n.offset);
-// const TARGET_X = music1.targetX;
-// let targetNote = 0;
 type Timer = number;
 class Animator {
   counts: Count[];
@@ -249,6 +208,7 @@ class Animator {
   transitionTimers: Timer[];
   goalNote: number;
   startTime: number;
+  inProgress: boolean = false;
 
   constructor(_counts: Count[], bpm: number) {
     this.counts = _counts;
@@ -260,10 +220,17 @@ class Animator {
       .slice(0, -1)
       .map( (c: Count, i: number) => (c.beat + this.counts[i + 1].beat) / 2 )
       .map( (t: number) => 4 * t * beatLength);
-    this.transitionTimes[this.counts.length - 1] = this.transitionTimes[this.counts.length - 1]
+    const finalRightWindow = 
+      this.noteTimes[this.noteTimes.length - 1] - 
+      this.transitionTimes[this.transitionTimes.length - 1];
+    this.transitionTimes[this.counts.length - 1] = this.noteTimes[this.noteTimes.length - 1] + finalRightWindow;
   }
 
   start() {
+    if(this.inProgress) {
+      this.stop();
+    }
+
     this.goalNote = 0;
     this.counts
       .map( (c: Count) => c.dom)
@@ -278,19 +245,35 @@ class Animator {
     this.transitionTimers = this.transitionTimes.map( mapper(this.nextGoal) );
 
     document.addEventListener("keydown", this.keyHandler.bind(this));
+
+    this.inProgress = true;
+  }
+
+  stop() {
+    document.removeEventListener("keydown",this.keyHandler.bind(this));
+    // this.counts
+    //   .map( (c: Count) => c.dom)
+    //   .forEach( (d: SVGTextElement) => d.setAttribute("fill", "black"));
+    this.noteTimers.forEach( (t) => window.clearTimeout(t) );
+    this.transitionTimers.forEach( (t) => window.clearTimeout(t) );
+    this.inProgress = false;
   }
 
   revealCount(i: number) {
     this.counts[i].dom.setAttribute("font-weight", "bold");
     this.counts[i].dom.setAttribute("font-size", "3.2");
 
-    if(i > 0) {
-      this.counts[i-1].dom.setAttribute("font-size", "2.4696");
-    }
+    if(i > 0) { this.counts[i-1].dom.setAttribute("font-size", "2.4696"); }
   }
 
   nextGoal(i: number) {
-    this.goalNote = i + 1;
+    if(i + 1 < this.counts.length) {
+      this.goalNote = i + 1;
+    }
+    else {
+      this.counts[i].dom.setAttribute("font-size", "2.4696");
+      this.stop();
+    }
   }
 
   computeScore() {
@@ -299,22 +282,15 @@ class Animator {
     const window = this.transitionTimes[this.goalNote];
     const worstPossibleScore = this.goalNote == 0 ? window : window / 2;
     const rawScore = this.noteTimes[this.goalNote] - timeSinceStart;
-    console.log(`w: ${window} r: ${rawScore}`);
     const score = Math.pow(( 1 - (rawScore / worstPossibleScore)), DifficultyExponent);
     return score * 100;
   }
 
   setNoteColourToScore(score) {
     let colour;
-    if(score < 95) {
-      colour = "red";
-    }
-    if(95 <= score && score < 105) {
-      colour = "darkGreen"
-    }
-    if(105 <= score) {
-      colour = "blue"
-    }
+    if(score < 95) { colour = "red"; }
+    else if(95 <= score && score < 105) { colour = "darkGreen" }
+    else if(105 <= score) { colour = "blue" }
     this.counts[this.goalNote].dom.setAttribute("fill", colour);
   }
 
