@@ -30,6 +30,7 @@ SvgAddClassName =
 
 
 #(ly:set-option 'backend 'svg)
+%%#(ly:set-option 'crop #t)
 \pointAndClickOff
 
 \paper {
@@ -45,6 +46,11 @@ SvgAddClassName =
   % images with a little space on the right
   %line-width = #(- line-width (* mm  3.000000) (* mm 1))
   ragged-right = ##t
+  tagline = ##f
+  top-margin = 0
+  bottom-margin = 0
+  left-margin = 0
+  right-margin = 0
 }
 
 \layout {
@@ -60,4 +66,8 @@ SvgAddClassName =
     }
   }
 
-
+% Thankfully, this gets applied before the automatic-class-adder gets its turn. 
+% This means that we don't have to worry about overriding other attributes. 
+PH = {
+  \once \override LyricText.output-attributes = #'((data-placeholder . "t"))
+}

@@ -4,6 +4,8 @@ const SVGNamespace = "http://www.w3.org/2000/svg";
 const LilypondSVGScaleFactor = 8;
 const LilypondSVGId = "lilysvg";
 const DifficultyExponent = 8;
+const PlayedRestScore = 0;
+const MissedNoteScore = 0;
 
 // New strategy for smooth scrolling: seperate moving and static elements into separate SVGs, then blit them seperately to a canvas.
 
@@ -131,19 +133,28 @@ function sortByPosition(doc: SVGElement):void {
   gEls.forEach( (el) => doc.appendChild(el) );
 }
 
+type CountElement = SVGTextElement;
+type NoteheadElement = SVGPathElement;
+type RestElement = SVGPathElement;
+
 interface Count {
   display: string;
   beat: number;
-  dom: SVGTextElement;
+  text: CountElement;
+  note: NoteheadElement | RestElement | null;
+  isPlayed: boolean;
+  hasNote: boolean;
 }
+type PartialCountFromLilypondEvents = Omit<Count, "text" | "note" | "isPlayed" | "hasNote">
+type PartialCountFromDom = Omit<Count, "display" | "beat">
 
-function parseLilypondEvents(allEvents: string): Omit<Count, "dom">[] {
+function parseLilypondEvents(allEvents: string): PartialCountFromLilypondEvents[] {
   let tokenized = allEvents.split('\n').map((line) => line.split('\t'));
   let textEvents = tokenized.filter((line) => line[1] == "lyric");
   return textEvents.map( (e) => ({ display: e[2], beat: parseFloat(e[0])}) );
 }
 
-function truncateToOneSequence(textEvents: Omit<Count, "dom">[]): Omit<Count, "dom">[] {
+function truncateToOneSequence(textEvents: PartialCountFromLilypondEvents[]): PartialCountFromLilypondEvents[] {
   // -1 So we match with 0 using the strict inequality;
   let maxBeat = -1;
   return textEvents.filter( (val) => {
@@ -157,11 +168,53 @@ function truncateToOneSequence(textEvents: Omit<Count, "dom">[]): Omit<Count, "d
   });
 }
 
-function zipLilypondEventsAndDom(e: Omit<Count, "dom">[], d: SVGTextElement[]): Count[] {
+// This function relies on the parent being a <g> tag.
+// TODO: Move classes to the actual elements?
+function isRest(el: NoteheadElement | RestElement): boolean {
+  const parentG = el.parentElement;
+  return parentG.classList.contains("Rest");
+}
+
+function hasNote(el: CountElement): boolean {
+  const parentG = el.parentElement;
+  return !parentG.hasAttribute("data-placeholder");
+}
+
+// This function relies on the fact that elements have already been properly sorted by flow position
+// TODO: Move sorting here
+// This a mess :(
+function getDomCounts(parent: SVGElement): PartialCountFromDom[] {
+  const textElements = filterNodeList<CountElement>(parent, "g.LyricText > text");
+  const noteElements = filterNodeList<NoteheadElement | RestElement>(parent, "g.NoteHead > path, g.Rest > path");
+  let offset = 0;
+  return textElements.map((d, i) => {
+    let count: PartialCountFromDom;
+    if(hasNote(d)) {
+      count = {
+        text: d,
+        note: noteElements[i - offset],
+        hasNote: true,
+        isPlayed: !isRest(noteElements[i - offset])
+      }
+    }
+    else {
+      count = {
+        text: d,
+        note: null,
+        hasNote: false,
+        isPlayed: false
+      }
+      offset += 1;
+    }
+    return count;
+  });
+}
+
+function zipLilypondEventsAndDom(e: PartialCountFromLilypondEvents[], d: PartialCountFromDom[]): Count[] {
   if(e.length != d.length) {
     console.error("Lengths of Lilypond text events and corresponding DOM elements are mismatched.");
   }
-  return e.map( (evt, index) => ({...evt, dom: d[index]}));
+  return e.map( (evt, index) => ({...evt, ...d[index]}));
 }
 
 class RenderedMusic {
@@ -177,7 +230,7 @@ class RenderedMusic {
       sizeSVGByContent(this.musicSVG);
       
       const lilyEvents = truncateToOneSequence(parseLilypondEvents(musicEventsFile.toString()));
-      const domCounts = filterNodeList<SVGTextElement>(this.musicSVG, "g.LyricText > text");
+      const domCounts = getDomCounts(this.musicSVG);
       this.counts = zipLilypondEventsAndDom(lilyEvents, domCounts);
 
       console.log(this.counts);
@@ -209,10 +262,16 @@ class Animator {
   goalNote: number;
   startTime: number;
   inProgress: boolean = false;
+  sumScore: number | null = null;
+  elapsedPlayableNotes: number;
+  scoreElement: HTMLDivElement;
+  lastNoteWasAttempted: boolean = false;
 
-  constructor(_counts: Count[], bpm: number) {
+  constructor(_counts: Count[], bpm: number, _scoreElement: HTMLDivElement) {
     this.counts = _counts;
     const beatLength = (60 / bpm) * 1000;
+    this.scoreElement = _scoreElement;
+
     this.noteTimes = this.counts
       .map( (c: Count) => c.beat )
       .map( (t: number) => 4 * t * beatLength);
@@ -224,6 +283,13 @@ class Animator {
       this.noteTimes[this.noteTimes.length - 1] - 
       this.transitionTimes[this.transitionTimes.length - 1];
     this.transitionTimes[this.counts.length - 1] = this.noteTimes[this.noteTimes.length - 1] + finalRightWindow;
+
+    // Set colour of count based on whether the player should play the note. Faint for a rest, dark for a playable note.
+    this.counts
+      .forEach( (c: Count) => { 
+        const colour = c.isPlayed ? "dark" : "lightGrey";
+        c.text.setAttribute("fill", colour); 
+    });
   }
 
   start() {
@@ -232,10 +298,16 @@ class Animator {
     }
 
     this.goalNote = 0;
-    this.counts
-      .map( (c: Count) => c.dom)
-      .forEach( (d: SVGTextElement) => d.setAttribute("fill", "darkGrey"));
+    this.sumScore = 0;
+
+    this.counts.forEach( (c: Count) => {
+      if(c.hasNote) {
+        c.note.setAttribute("fill", "black")
+      }
+    });
+    
     this.startTime = Date.now();
+    this.elapsedPlayableNotes = 1;
 
     type Func = (i: number) => void;
     const curry = ( fn: Func, index: number ) => ( () => fn(index) ).bind( this );
@@ -251,27 +323,39 @@ class Animator {
 
   stop() {
     document.removeEventListener("keydown",this.keyHandler.bind(this));
-    // this.counts
-    //   .map( (c: Count) => c.dom)
-    //   .forEach( (d: SVGTextElement) => d.setAttribute("fill", "black"));
+    
     this.noteTimers.forEach( (t) => window.clearTimeout(t) );
     this.transitionTimers.forEach( (t) => window.clearTimeout(t) );
     this.inProgress = false;
   }
 
   revealCount(i: number) {
-    this.counts[i].dom.setAttribute("font-weight", "bold");
-    this.counts[i].dom.setAttribute("font-size", "3.2");
+    this.counts[i].text.setAttribute("font-weight", "bold");
+    this.counts[i].text.setAttribute("font-size", "3.2");
 
-    if(i > 0) { this.counts[i-1].dom.setAttribute("font-size", "2.4696"); }
+    if(i > 0) { this.counts[i-1].text.setAttribute("font-size", "2.4696"); }
+  }
+
+  indicateMissed(el: NoteheadElement) {
+    el.setAttribute("fill", "lightGrey");
   }
 
   nextGoal(i: number) {
+    if(this.counts[this.goalNote].isPlayed) {
+      this.elapsedPlayableNotes += 1;
+    }
+
+    const missedNote: boolean = !this.lastNoteWasAttempted && this.counts[this.goalNote].isPlayed;
+    if(missedNote) {
+      this.updateOverallScore(MissedNoteScore);
+      this.indicateMissed(this.counts[this.goalNote].note);
+    }
+    this.lastNoteWasAttempted = false;
     if(i + 1 < this.counts.length) {
       this.goalNote = i + 1;
     }
     else {
-      this.counts[i].dom.setAttribute("font-size", "2.4696");
+      this.counts[i].text.setAttribute("font-size", "2.4696");
       this.stop();
     }
   }
@@ -288,16 +372,32 @@ class Animator {
 
   setNoteColourToScore(score) {
     let colour;
-    if(score < 95) { colour = "red"; }
-    else if(95 <= score && score < 105) { colour = "darkGreen" }
-    else if(105 <= score) { colour = "blue" }
-    this.counts[this.goalNote].dom.setAttribute("fill", colour);
+    if      ( score < 95 )                  { colour = "red"; }
+    else if ( 95 <= score && score < 105 )  { colour = "darkGreen" }
+    else if ( 105 <= score )                { colour = "blue" }
+    this.counts[this.goalNote].note.setAttribute("fill", colour);
+  }
+
+  updateOverallScore(newScore: number) {
+    const absoluteScore = 100 - Math.abs(newScore - 100);
+    this.sumScore += absoluteScore;
+    const avg = this.sumScore / (this.elapsedPlayableNotes + 1);
+    this.scoreElement.innerHTML = `${avg.toFixed(2)}%`
   }
 
   keyHandler(evt) {
-    const score = this.computeScore();
-    this.setNoteColourToScore(score);
-    console.log(`Score: ${score.toFixed(2)}%`);
+    if(this.counts[this.goalNote].isPlayed) {
+      const score = this.computeScore();
+      this.updateOverallScore(score);
+      this.setNoteColourToScore(score);
+      console.log(`Score: ${score.toFixed(2)}%`);
+      this.lastNoteWasAttempted = true;
+    }
+    else {
+      // Add an extra one for this penalty
+      this.elapsedPlayableNotes += 1;
+      this.updateOverallScore(PlayedRestScore);
+    }
   }
 
 }
@@ -311,13 +411,15 @@ class Scene {
     constructor(_parent: HTMLDivElement) {
       this.parent = _parent;
       this.music = new RenderedMusic();
+      let score = document.createElement("div");
       
-      this.animator = new Animator(this.music.counts, 50);
+      this.animator = new Animator(this.music.counts, 50, score);
       let btn = document.createElement("button");
       btn.innerHTML = "Start"
       btn.onclick = this.animator.start.bind(this.animator);
       
       this.parent.appendChild(btn);
+      this.parent.appendChild(score);
       this.parent.appendChild(document.createElement("br"));
       this.parent.appendChild(this.music.content);
     }
