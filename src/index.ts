@@ -226,7 +226,7 @@ class RenderedMusic {
       const domCounts = getDomCounts(this.musicSVG);
       this.counts = zipLilypondEventsAndDom(lilyEvents, domCounts);
 
-      console.log(this.counts);
+      // console.log(this.counts);
     }
 
   get scoreWidth(): number {
@@ -423,14 +423,13 @@ class Animator {
 
   updateOverallScore(newScore: number) {
     const absoluteScore = 100 - Math.abs(newScore - 100);
-    console.log(`Abs: ${absoluteScore}`);
+    
     this.sumScore += absoluteScore;
     const avg = this.sumScore / (this.elapsedPlayableNotes + 1);
     this.scoreElement.innerHTML = `${avg.toFixed(2)}%`
   }
 
   keyHandler(evt: Event) {
-    console.log("Hey");
     if(this.counts[this.goalNote].isPlayed) {
       const score = this.computeScore(evt.timeStamp);
       this.updateOverallScore(score);
