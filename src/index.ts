@@ -1,15 +1,17 @@
 import {readFileSync} from 'fs'
+import { last } from 'lodash';
+import * as Tone from 'tone'
 
 const SVGNamespace = "http://www.w3.org/2000/svg";
 const LilypondSVGScaleFactor = 8;
 const LilypondSVGId = "lilysvg";
-const DifficultyExponent = 8;
-const PlayedRestScore = 0;
-const MissedNoteScore = 0;
+const DifficultyExponent = 0.25;
+const PlayedRestScore = 50;
+const MissedNoteScore = 50;
+const BigCountSize = 3.2;
+const NormalCountSize = 2.4696;
 
-// New strategy for smooth scrolling: seperate moving and static elements into separate SVGs, then blit them seperately to a canvas.
-
-
+const curry = ( fn: (i: number) => void, index: number ) => ( () => fn(index) );
 
 // Turns the NodeList returned by querySelector into a regular array, 
 // via a predicate which retains an element upon evaluating true.
@@ -50,15 +52,7 @@ function sizeSVGByContent(el: SVGElement): void {
     //el.setAttribute("preserveAspectRatio", "none");
 }
 
-function loadLilypondSVG(path: string): SVGElement {
-    let containerDiv = document.createElement("div");
-    let svg_string = readFileSync("Lilypond/test3.svg", 'utf8');
-    containerDiv.innerHTML = svg_string;
-    let tsvg = containerDiv.querySelector("svg") as SVGElement;
-    tsvg.setAttribute("id", LilypondSVGId);
-    //tsvg.querySelectorAll("g").forEach((gtag) => propogateClassToChildren(gtag));
-    return tsvg;
-}
+
 
 function removeEmptyGTags(doc: SVGElement): void {
   let g = filterNodeList<SVGGElement>(doc, "g");
@@ -222,14 +216,13 @@ class RenderedMusic {
     counts: Count[];
 
     noteObjects: Note[];
-    constructor() {
-      this.musicSVG = loadLilypondSVG("Lilypond/test3.svg");
-      const musicEventsFile = readFileSync("Lilypond/test3-unnamed-staff.notes");
+    constructor(_musicSVG: SVGElement, _lilypondEvents: string) {
+      this.musicSVG = _musicSVG;
       removeEmptyGTags(this.musicSVG);
       sortByPosition(this.musicSVG);
       sizeSVGByContent(this.musicSVG);
       
-      const lilyEvents = truncateToOneSequence(parseLilypondEvents(musicEventsFile.toString()));
+      const lilyEvents = truncateToOneSequence(parseLilypondEvents(_lilypondEvents));
       const domCounts = getDomCounts(this.musicSVG);
       this.counts = zipLilypondEventsAndDom(lilyEvents, domCounts);
 
@@ -245,12 +238,50 @@ class RenderedMusic {
   }
 }
 
+
+
 // Animation:
 // Array, note times in ms, setTimout() for each
 // Array, switchover times; halfway between each note + edge case for last element, setTimeout() for each
 // Number, Index pointing to currentGoal note
 // Number Start time in ms from Date.prototype.getMilliseconds()?
 // Event handler, keypress, check current time - start time compared to current goal note.
+
+function createTimersFromTimes(times: number[], callback: (i: number) => void): Timer[] {
+  return times.map(
+    (time, index) => window.setTimeout(curry(callback, index), time)
+  );
+}
+
+class Metronome {
+  synth: Tone.MembraneSynth;
+  times: number[];
+  constructor(bars: number, beatsPerBar: number, tempo: number) {
+    this.synth = new Tone.MembraneSynth().toDestination();
+    const numberOfBeats = Math.ceil(bars) * beatsPerBar;
+    const beatLength = (60 / tempo) * 1000;
+    this.times = [...Array(numberOfBeats).keys()].map((unused: any, index: number) => index * beatLength);
+  }
+
+  start() {
+    const now = Tone.now();
+    this.times.forEach(
+      (time) => {
+        this.synth.triggerAttackRelease("C3", "32n", now + (time / 1000));
+      }
+    )
+  }
+
+  stop() {
+    Tone.Transport.cancel();
+  }
+}
+
+function makeBoldWeight(el: SVGTextElement)         { el.setAttribute("font-weight", "bold"); }
+function makeNormalWeight(el: SVGTextElement)       { el.setAttribute("font-weight", "normal"); }
+function makeCountBig(el: SVGTextElement)           { el.setAttribute("font-size", BigCountSize.toString()); }
+function makeCountNormal(el: SVGTextElement)        { el.setAttribute("font-size", NormalCountSize.toString()); }
+function setColour(el: SVGElement, colour: string)  { el.setAttribute("fill", colour); }
 
 type Timer = number;
 class Animator {
@@ -259,6 +290,7 @@ class Animator {
   noteTimers: Timer[];
   transitionTimes: number[];
   transitionTimers: Timer[];
+  metronome: Metronome;
   goalNote: number;
   startTime: number;
   inProgress: boolean = false;
@@ -266,6 +298,9 @@ class Animator {
   elapsedPlayableNotes: number;
   scoreElement: HTMLDivElement;
   lastNoteWasAttempted: boolean = false;
+  timingWindow: number;
+  eventLoopTimer: Timer;
+  onKeyDown: (evt: Event) => void;
 
   constructor(_counts: Count[], bpm: number, _scoreElement: HTMLDivElement) {
     this.counts = _counts;
@@ -285,44 +320,47 @@ class Animator {
     this.transitionTimes[this.counts.length - 1] = this.noteTimes[this.noteTimes.length - 1] + finalRightWindow;
 
     // Set colour of count based on whether the player should play the note. Faint for a rest, dark for a playable note.
-    this.counts
-      .forEach( (c: Count) => { 
-        const colour = c.isPlayed ? "dark" : "lightGrey";
-        c.text.setAttribute("fill", colour); 
-    });
+    this.counts.forEach( c => setColour(c.text, c.isPlayed ? "dark" : "lightGrey") );
+
+    const lastBeat = this.counts[this.counts.length - 1].beat;
+    this.metronome = new Metronome(lastBeat, 4, bpm);
+    this.timingWindow = beatLength / 4; // Set timing window to semiquaver.
+    this.onKeyDown = this.keyHandler.bind(this); // So the event listeners have a consistent reference.
   }
 
-  start() {
+  start(event: Event) {
+    
     if(this.inProgress) {
       this.stop();
     }
 
     this.goalNote = 0;
     this.sumScore = 0;
+    this.scoreElement.innerHTML = "";
 
-    this.counts.forEach( (c: Count) => {
-      if(c.hasNote) {
-        c.note.setAttribute("fill", "black")
-      }
-    });
+    this.counts
+      .filter( c => c.hasNote)
+      .forEach( c => setColour(c.note, "black") )
+    this.counts.forEach( c => makeNormalWeight(c.text));
     
-    this.startTime = Date.now();
+    this.startTime = event.timeStamp;
     this.elapsedPlayableNotes = 1;
 
-    type Func = (i: number) => void;
-    const curry = ( fn: Func, index: number ) => ( () => fn(index) ).bind( this );
-    const indexedTimer = ( time, index, fn ) => window.setTimeout( curry(fn, index), time );
-    const mapper = (fn) => ( (time, index) => indexedTimer(time, index, fn.bind(this)) );
-    this.noteTimers = this.noteTimes.map( mapper(this.revealCount) );
-    this.transitionTimers = this.transitionTimes.map( mapper(this.nextGoal) );
+    
+    this.noteTimers = createTimersFromTimes(this.noteTimes, this.revealCount.bind(this));
+    this.transitionTimers = createTimersFromTimes(this.transitionTimes, this.nextGoal.bind(this));
+    this.metronome.start();
 
-    document.addEventListener("keydown", this.keyHandler.bind(this));
+    document.addEventListener("keypress", this.onKeyDown);
+    document.addEventListener("touchstart", this.onKeyDown);
 
     this.inProgress = true;
   }
 
   stop() {
-    document.removeEventListener("keydown",this.keyHandler.bind(this));
+    document.removeEventListener("keypress", this.onKeyDown);
+    document.removeEventListener("touchstart", this.onKeyDown);
+    this.metronome.stop();
     
     this.noteTimers.forEach( (t) => window.clearTimeout(t) );
     this.transitionTimers.forEach( (t) => window.clearTimeout(t) );
@@ -330,14 +368,14 @@ class Animator {
   }
 
   revealCount(i: number) {
-    this.counts[i].text.setAttribute("font-weight", "bold");
-    this.counts[i].text.setAttribute("font-size", "3.2");
+    makeBoldWeight(this.counts[i].text);
+    makeCountBig(this.counts[i].text);
 
-    if(i > 0) { this.counts[i-1].text.setAttribute("font-size", "2.4696"); }
+    if(i > 0) makeCountNormal(this.counts[i-1].text); 
   }
 
   indicateMissed(el: NoteheadElement) {
-    el.setAttribute("fill", "lightGrey");
+    setColour(el, "lightGrey");
   }
 
   nextGoal(i: number) {
@@ -355,39 +393,46 @@ class Animator {
       this.goalNote = i + 1;
     }
     else {
-      this.counts[i].text.setAttribute("font-size", "2.4696");
+      makeCountNormal(this.counts[i].text);
       this.stop();
     }
   }
 
-  computeScore() {
-    const pressTime = Date.now();
+  computeScore(pressTime) {
     const timeSinceStart = pressTime - this.startTime;
-    const window = this.transitionTimes[this.goalNote];
+    //const window = this.transitionTimes[this.goalNote];
+    const window = this.timingWindow * 3;
     const worstPossibleScore = this.goalNote == 0 ? window : window / 2;
-    const rawScore = this.noteTimes[this.goalNote] - timeSinceStart;
+    const rawScore = this.noteTimes[this.goalNote] - timeSinceStart - 150;
     const score = Math.pow(( 1 - (rawScore / worstPossibleScore)), DifficultyExponent);
+    // console.log('/------------------')
+    // console.log(`| TSS: ${timeSinceStart} PT: ${pressTime} ST: ${this.startTime}`)
+    // console.log(`| GT: ${this.noteTimes[this.goalNote]}`);
+    // console.log('\\------------------')
+
     return score * 100;
   }
 
   setNoteColourToScore(score) {
     let colour;
-    if      ( score < 95 )                  { colour = "red"; }
-    else if ( 95 <= score && score < 105 )  { colour = "darkGreen" }
-    else if ( 105 <= score )                { colour = "blue" }
-    this.counts[this.goalNote].note.setAttribute("fill", colour);
+    if      ( score < 85 )                  { colour = "red"; }
+    else if ( 85 <= score && score < 115 )  { colour = "darkGreen" }
+    else if ( 115 <= score )                { colour = "blue" }
+    setColour(this.counts[this.goalNote].note, colour);
   }
 
   updateOverallScore(newScore: number) {
     const absoluteScore = 100 - Math.abs(newScore - 100);
+    console.log(`Abs: ${absoluteScore}`);
     this.sumScore += absoluteScore;
     const avg = this.sumScore / (this.elapsedPlayableNotes + 1);
     this.scoreElement.innerHTML = `${avg.toFixed(2)}%`
   }
 
-  keyHandler(evt) {
+  keyHandler(evt: Event) {
+    console.log("Hey");
     if(this.counts[this.goalNote].isPlayed) {
-      const score = this.computeScore();
+      const score = this.computeScore(evt.timeStamp);
       this.updateOverallScore(score);
       this.setNoteColourToScore(score);
       console.log(`Score: ${score.toFixed(2)}%`);
@@ -408,9 +453,9 @@ class Scene {
     animator: Animator;
 
 
-    constructor(_parent: HTMLDivElement) {
+    constructor(_parent: HTMLDivElement, musicGraphics: SVGElement, lilypondEvents: string) {
       this.parent = _parent;
-      this.music = new RenderedMusic();
+      this.music = new RenderedMusic(musicGraphics, lilypondEvents);
       let score = document.createElement("div");
       
       this.animator = new Animator(this.music.counts, 50, score);
@@ -426,5 +471,57 @@ class Scene {
 
 }
 
-const parent = <HTMLDivElement>document.querySelector("div#music-canvas");
-const scene = new Scene(parent);
+// TODO Handle 404
+async function loadLilypondSVG(path: string): Promise<SVGElement> {
+  return fetch(path)
+    .then(r => {
+      if(r.ok) return r.text()
+      else return Promise.reject(`Error ${r.status} when fetching "${path}"`)
+    })
+    .then(text => {
+      let containerDiv = document.createElement("div");
+      containerDiv.innerHTML = text;
+      let tsvg = containerDiv.querySelector("svg") as SVGElement;
+      tsvg.setAttribute("id", LilypondSVGId);
+      return tsvg;
+    })
+}
+
+// TODO Handle 404
+async function loadLilypondEvents(path: string): Promise<string> {
+  return fetch(path)
+  .then(r => {
+    if(r.ok) return r.text()
+    else return Promise.reject(`Error ${r.status} when fetching "${path}"`)
+  })
+}
+
+// TODO Add more lifecycle methods
+class RhythmGame extends HTMLElement {
+  scene: Scene;
+
+  constructor() {
+    super();
+    this.attachShadow({mode: 'open'});
+  }
+
+  async getResources(svg: string, events: string): Promise<{svg: SVGElement, events: string}> {
+    return Promise.all([loadLilypondSVG(svg), loadLilypondEvents(events)])
+      .then((values) => ({svg: values[0], events: values[1]}));
+  }
+
+  async connectedCallback() {
+    if(this.hasAttribute("data-name")) {
+      const prefix = this.getAttribute("data-name");
+      const resources = await this.getResources(`${prefix}.svg`, `${prefix}-unnamed-staff.notes`);
+      const wrapper = document.createElement("div");
+      this.scene = new Scene(wrapper, resources.svg, resources.events);
+      this.shadowRoot.append(wrapper);
+    }
+  }
+}
+
+window.customElements.define("rhythm-game", RhythmGame);
+
+//const parent = <HTMLDivElement>document.querySelector("div#music-canvas");
+//const scene = new Scene(parent);
