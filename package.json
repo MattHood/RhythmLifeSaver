@@ -5,8 +5,8 @@
   "main": "index.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "npm install",
-    "start": "node build.js"
+    "build": "npm install && node build.js",
+    "start": ""
   },
   "repository": {
     "type": "git",
