@@ -1,2 +1,5 @@
 rm -f *.notes
-lilypond test3.ly
+lilypond *.ly
+
+mv -f *.svg ../public
+mv -f *.notes ../public

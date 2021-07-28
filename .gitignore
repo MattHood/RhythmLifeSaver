@@ -4,3 +4,7 @@ dist/
 .cache/
 package-lock.json
 .parcel-cache
+.log/
+public/index.html
+public/index.js
+public/index.js.map

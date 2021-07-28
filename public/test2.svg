@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.2" width="210.00mm" height="297.00mm" viewBox="0 0 119.5016 169.0094">
+<style text="style/css">
+<![CDATA[
+tspan { white-space: pre; }
+]]>
+</style>
+<!-- Page: 1/1 -->
+<text transform="translate(5.6906, -0.0000)" font-family="LilyPond Serif" font-size="2.2001" text-anchor="start" fill="currentColor">
+<tspan/>
+</text>
+<g class="StaffSymbol">
+<line transform="translate(5.6906, 6.1617)" stroke-linejoin="round" stroke-linecap="round" stroke-width="0.1000" stroke="currentColor" x1="0.0500" y1="-0.0000" x2="76.5547" y2="-0.0000"/>
+</g>
+<g class="BarLine">
+<rect transform="translate(82.1053, 6.1617)" x="0.0000" y="-1.0500" width="0.1900" height="2.1000" ry="0.0000" fill="currentColor"/>
+</g>
+<g class="Stem">
+<rect transform="translate(56.5345, 6.1617)" x="-0.0650" y="-3.1900" width="0.1300" height="3.0039" ry="0.0400" fill="currentColor"/>
+</g>
+<g class="NoteHead">
+<path transform="translate(55.2953, 6.1617) scale(0.0040, -0.0040)" d="M218 136c55 0 108 -28 108 -89c0 -71 -55 -121 -102 -149c-35 -21 -75 -34 -116 -34c-55 0 -108 28 -108 89c0 71 55 121 102 149c35 21 75 34 116 34z" fill="currentColor"/>
+</g>
+<g class="Stem">
+<rect transform="translate(52.0345, 6.1617)" x="-0.0650" y="-3.1900" width="0.1300" height="3.0039" ry="0.0400" fill="currentColor"/>
+</g>
+<g class="NoteHead">
+<path transform="translate(50.7953, 6.1617) scale(0.0040, -0.0040)" d="M218 136c55 0 108 -28 108 -89c0 -71 -55 -121 -102 -149c-35 -21 -75 -34 -116 -34c-55 0 -108 28 -108 89c0 71 55 121 102 149c35 21 75 34 116 34z" fill="currentColor"/>
+</g>
+<g class="Stem">
+<rect transform="translate(47.5345, 6.1617)" x="-0.0650" y="-3.1900" width="0.1300" height="3.0039" ry="0.0400" fill="currentColor"/>
+</g>
+<g class="NoteHead">
+<path transform="translate(46.2953, 6.1617) scale(0.0040, -0.0040)" d="M218 136c55 0 108 -28 108 -89c0 -71 -55 -121 -102 -149c-35 -21 -75 -34 -116 -34c-55 0 -108 28 -108 89c0 71 55 121 102 149c35 21 75 34 116 34z" fill="currentColor"/>
+</g>
+<g class="TupletBracket">
+</g>
+<g class="TupletNumber">
+<text transform="translate(72.2565, 2.2292)" font-family="LilyPond Serif" font-style="italic" font-size="1.7461" text-anchor="start" fill="currentColor">
+<tspan>5</tspan>
+</text>
+</g>
+<g class="Beam">
+<polygon transform="translate(47.4695, 2.9717)" stroke-linejoin="round" stroke-linecap="round" stroke-width="0.0800" fill="currentColor" stroke="currentColor" points="13.5900 -0.2000 13.5900 0.2000 0.0400 0.2000 0.0400 -0.2000"/>
+<polygon transform="translate(47.4695, 3.7817)" stroke-linejoin="round" stroke-linecap="round" stroke-width="0.0800" fill="currentColor" stroke="currentColor" points="13.5900 -0.2000 13.5900 0.2000 0.0400 0.2000 0.0400 -0.2000"/>
+</g>
+<g class="Beam">
+<polygon transform="translate(65.4695, 2.9717)" stroke-linejoin="round" stroke-linecap="round" stroke-width="0.0800" fill="currentColor" stroke="currentColor" points="14.4900 -0.2000 14.4900 0.2000 0.0400 0.2000 0.0400 -0.2000"/>
+<polygon transform="translate(65.4695, 3.7817)" stroke-linejoin="round" stroke-linecap="round" stroke-width="0.0800" fill="currentColor" stroke="currentColor" points="14.4900 -0.2000 14.4900 0.2000 0.0400 0.2000 0.0400 -0.2000"/>
+</g>
+<g class="Stem">
+<rect transform="translate(69.1345, 6.1617)" x="-0.0650" y="-3.1900" width="0.1300" height="3.0039" ry="0.0400" fill="currentColor"/>
+</g>
+<g class="NoteHead">
+<path transform="translate(67.8953, 6.1617) scale(0.0040, -0.0040)" d="M218 136c55 0 108 -28 108 -89c0 -71 -55 -121 -102 -149c-35 -21 -75 -34 -116 -34c-55 0 -108 28 -108 89c0 71 55 121 102 149c35 21 75 34 116 34z" fill="currentColor"/>
+</g>
+<g class="NoteHead">
+<path transform="translate(59.7953, 6.1617) scale(0.0040, -0.0040)" d="M218 136c55 0 108 -28 108 -89c0 -71 -55 -121 -102 -149c-35 -21 -75 -34 -116 -34c-55 0 -108 28 -108 89c0 71 55 121 102 149c35 21 75 34 116 34z" fill="currentColor"/>
+</g>
+<g class="Stem">
+<rect transform="translate(65.5345, 6.1617)" x="-0.0650" y="-3.1900" width="0.1300" height="3.0039" ry="0.0400" fill="currentColor"/>
+</g>
+<g class="NoteHead">
+<path transform="translate(64.2953, 6.1617) scale(0.0040, -0.0040)" d="M218 136c55 0 108 -28 108 -89c0 -71 -55 -121 -102 -149c-35 -21 -75 -34 -116 -34c-55 0 -108 28 -108 89c0 71 55 121 102 149c35 21 75 34 116 34z" fill="currentColor"/>
+</g>
+<g class="Stem">
+<rect transform="translate(61.0345, 6.1617)" x="-0.0650" y="-3.1900" width="0.1300" height="3.0039" ry="0.0400" fill="currentColor"/>
+</g>
+<g class="Stem">
+<rect transform="translate(72.7345, 6.1617)" x="-0.0650" y="-3.1900" width="0.1300" height="3.0039" ry="0.0400" fill="currentColor"/>
+</g>
+<g class="NoteHead">
+<path transform="translate(71.4953, 6.1617) scale(0.0040, -0.0040)" d="M218 136c55 0 108 -28 108 -89c0 -71 -55 -121 -102 -149c-35 -21 -75 -34 -116 -34c-55 0 -108 28 -108 89c0 71 55 121 102 149c35 21 75 34 116 34z" fill="currentColor"/>
+</g>
+<g class="Stem">
+<rect transform="translate(11.6076, 6.1617)" x="-0.0650" y="-3.3333" width="0.1300" height="3.0743" ry="0.0400" fill="currentColor"/>
+</g>
+<g class="TimeSignature">
+<text transform="translate(6.6906, 6.1617)" font-family="emmentaler-20" font-size="4.0001" text-anchor="start" fill="currentColor">
+<tspan>4</tspan>
+</text>
+<text transform="translate(6.6906, 8.1761)" font-family="emmentaler-20" font-size="4.0001" text-anchor="start" fill="currentColor">
+<tspan>4</tspan>
+</text>
+</g>
+<g class="NoteHead">
+<path transform="translate(10.2953, 6.1617) scale(0.0040, -0.0040)" d="M314 65c0 24 -21 41 -42 41c-4 0 -8 0 -12 -1c-31 -9 -78 -40 -115 -64s-84 -53 -104 -78c-7 -8 -10 -18 -10 -28c0 -24 21 -41 42 -41c4 0 8 0 12 1c31 9 77 40 114 64s84 53 104 78c7 8 11 18 11 28zM262 136c46 0 82 -21 82 -71c0 -19 -4 -39 -10 -57
+c-12 -37 -32 -72 -64 -94c-53 -36 -113 -50 -187 -50c-46 0 -83 21 -83 71c0 19 5 39 11 57c12 37 31 72 63 94c53 36 114 50 188 50z" fill="currentColor"/>
+</g>
+<g class="Stem">
+<rect transform="translate(79.9345, 6.1617)" x="-0.0650" y="-3.1900" width="0.1300" height="3.0039" ry="0.0400" fill="currentColor"/>
+</g>
+<g class="NoteHead">
+<path transform="translate(78.6953, 6.1617) scale(0.0040, -0.0040)" d="M218 136c55 0 108 -28 108 -89c0 -71 -55 -121 -102 -149c-35 -21 -75 -34 -116 -34c-55 0 -108 28 -108 89c0 71 55 121 102 149c35 21 75 34 116 34z" fill="currentColor"/>
+</g>
+<g class="Stem">
+<rect transform="translate(76.3345, 6.1617)" x="-0.0650" y="-3.1900" width="0.1300" height="3.0039" ry="0.0400" fill="currentColor"/>
+</g>
+<g class="NoteHead">
+<path transform="translate(75.0953, 6.1617) scale(0.0040, -0.0040)" d="M218 136c55 0 108 -28 108 -89c0 -71 -55 -121 -102 -149c-35 -21 -75 -34 -116 -34c-55 0 -108 28 -108 89c0 71 55 121 102 149c35 21 75 34 116 34z" fill="currentColor"/>
+</g>
+</svg>
