@@ -64,6 +64,10 @@ SvgAddClassName =
       proportionalNotationDuration = #(ly:make-moment 1/30)
       \override SpacingSpanner.uniform-stretching = ##t
     }
+    \context {
+      \Lyrics
+      \remove "Instrument_name_engraver"
+    }
   }
 
 % Thankfully, this gets applied before the automatic-class-adder gets its turn. 

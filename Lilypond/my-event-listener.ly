@@ -47,10 +47,10 @@ name, it uses "unnamed-staff" for that part of the filename."
                            ;; filename without .ly part
                            (+ (string-rindex (object->string (command-line)) #\sp) 2)
                            (- (string-length (object->string (command-line))) 5))
-                          "-"
-                          (if (string? inst-name)
-                              inst-name
-                            "unnamed-staff")
+                          ;"-"
+                          ;(if (string? inst-name)
+                          ;    inst-name
+                          ;  "unnamed-staff")
                           ".notes"))))
 
 #(define (format-moment moment)
@@ -81,11 +81,13 @@ after beat?  etc.)."
    "Constructs a tab-separated string beginning with the
 score time (derived from the context) and then adding all the
 values.  The string ends with a newline."
-   (let* ((moment (ly:context-current-moment context)))
+   (let* ((moment (ly:context-current-moment context))
+          (name (ly:context-property context 'instrumentName)))
     (string-append
      (string-join
        (append
-         (list (moment-grace->string moment))
+         (list (moment-grace->string moment)
+               (if (string? name) name "undefined"))
          (map
              (lambda (x) (ly:format "~a" x))
              values))
@@ -132,10 +134,12 @@ as an engraver for convenience."
                   (ly:event-property event 'duration))
                  (format-moment (ly:duration-length
                                  (ly:event-property event 'duration)))
+                  ;(ly:event-property event 'metronome-count)
                  ;; point and click info
-                 (ly:format "point-and-click ~a ~a"
-                            (caddr origin)
-                            (cadr origin)))))
+                 ;(ly:format "point-and-click ~a ~a"
+                 ;           (caddr origin)
+                 ;           (cadr origin))
+                            )))
 
 #(define (format-tempo engraver event)
    (print-line engraver
@@ -213,7 +217,28 @@ as an engraver for convenience."
 %%%% change any settings.
 
 \layout {
-  \context {
+   \context {
+      \RhythmicStaff
+   \consists #(make-engraver
+              (listeners
+	      ; (tempo-change-event . format-tempo)
+	      (rest-event . format-rest)
+	      (note-event . format-note)
+	      ; (articulation-event . format-articulation)
+	      ; (text-script-event . format-text)
+	      ; (slur-event . format-slur)
+	      ; (breathing-event . format-breathe)
+	      ; (dynamic-event . format-dynamic)
+	      ; (crescendo-event . format-cresc)
+	      ; (decrescendo-event . format-decresc)
+	      ; (text-span-event . format-textspan)
+	      ; (glissando-event . format-glissando)
+	      ; (tie-event . format-tie)
+         ; (lyric-event . format-lyric)
+         ))
+   }
+\context {
+  
   \Lyrics
   \consists #(make-engraver
               (listeners
@@ -221,7 +246,7 @@ as an engraver for convenience."
 	      ; (rest-event . format-rest)
 	      ; (note-event . format-note)
 	      ; (articulation-event . format-articulation)
-	       (text-script-event . format-text)
+	      ; (text-script-event . format-text)
 	      ; (slur-event . format-slur)
 	      ; (breathing-event . format-breathe)
 	      ; (dynamic-event . format-dynamic)
