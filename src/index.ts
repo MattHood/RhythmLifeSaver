@@ -1,7 +1,4 @@
-import {readFileSync} from 'fs'
-import { last, toInteger } from 'lodash';
 import * as Tone from 'tone'
-import { Effect } from 'tone/build/esm/effect/Effect';
 
 const SVGNamespace = "http://www.w3.org/2000/svg";
 const LilypondSVGScaleFactor = 8;
@@ -64,8 +61,6 @@ function removeEmptyGTags(doc: SVGElement): void {
   });
 }
 
-interface Note { type: "A", x: number, y: number };
-
 function getXTransform(el: Element): number | null {
   const transform = el.getAttribute("transform");
   let re = /translate\((-?\d*.\d*)\,\s*-?\d*\.\d*\)/;
@@ -94,31 +89,7 @@ function getYTransform(el: Element): number | null {
   }
 }
 
-function getParentWithId(el: Element, id: string): Element | undefined {
-  if(el == undefined) {
-    console.warn("Ran out of parent nodes to trial.");
-    return undefined;
-  }
-  else if(el.hasAttribute("id")) {
-    if(el.getAttribute("id") == id) {
-      return el;
-    }
-  }
-  else {
-    return getParentWithId(el.parentElement, id);
-  }
-  
-}
-
-function positionScore(el: Element): number {
-  const parent = getParentWithId(el, LilypondSVGId);
-  const w = parseFloat(parent.getAttribute("width"));
-  const x = getXTransform(el);
-  const y = getYTransform(el);
-  return y*w + x;
-}
-
-function positionScore2(el: Element, width: number): number {
+function positionScore(el: Element, width: number): number {
   const w = width;
   const x = getXTransform(el);
   const y = getYTransform(el);
@@ -129,34 +100,14 @@ function sortByPosition(doc: SVGElement):void {
   let gEls = filterNodeList<SVGGElement>(doc, "g");
   const width = parseFloat(doc.getAttribute("width"));
   gEls.sort( function(g1, g2) {
-    let a = positionScore2(<Element>g1.firstElementChild, width);
-    let b = positionScore2(<Element>g2.firstElementChild, width);
+    let a = positionScore(<Element>g1.firstElementChild, width);
+    let b = positionScore(<Element>g2.firstElementChild, width);
     return a - b;
   });
   gEls.forEach( (el) => doc.appendChild(el) );
 }
 
 type CountElement = SVGTextElement;
-type NoteheadElement = SVGPathElement;
-type RestElement = SVGPathElement;
-
-interface StaffEvent 
-{
-  id: "NoteHead" | "Rest",
-  element: SVGPathElement;
-}
-
-interface Count {
-  display: string;
-  beat: number;
-  text: CountElement;
-  note: NoteheadElement | RestElement | null;
-  isPlayed: boolean;
-  hasNote: boolean;
-}
-type PartialCountFromLilypondEvents = Omit<Count, "text" | "note" | "isPlayed" | "hasNote">
-type PartialCountFromDom = Omit<Count, "display" | "beat">
-
 
 interface Moment {
   moment: number;
@@ -168,7 +119,7 @@ interface LilypondEvent {
   type: string
 }
 
-interface Count2 {
+interface Count {
   text: CountElement
 }
 
@@ -185,11 +136,11 @@ interface Item {
 
 interface Step {
   moment: number,
-  count: Count2,
+  count: Count,
   items: Item[]
 }
 
-function parseLilypondEvents2(allEvents: string): LilypondEvent[] {
+function parseLilypondEvents(allEvents: string): LilypondEvent[] {
   const parse = (t: string[]): LilypondEvent => 
     ({moment: parseFloat(t[0]),
       origin: t[1],
@@ -205,7 +156,7 @@ function parseLilypondEvents2(allEvents: string): LilypondEvent[] {
 
 // This function relies on the fact that elements have already been properly sorted by flow position
 // TODO: Move sorting here
-function getCounts(events: LilypondEvent[], parent: SVGElement): (Count2 & Moment)[] {
+function getCounts(events: LilypondEvent[], parent: SVGElement): (Count & Moment)[] {
   const countEvents = events.filter( (evt) => evt.origin == "Counts");
   const countElements = filterNodeList<CountElement>(parent, "g.LyricText > text");
   console.assert(countEvents.length == countElements.length);
@@ -227,7 +178,7 @@ function getItemsWithId(events: LilypondEvent[], parent: SVGElement, id: string)
 }
 
 
-function makeSteps(counts: (Count2 & Moment)[], ...items: (Item & Moment)[][]): Step[] {
+function makeSteps(counts: (Count & Moment)[], ...items: (Item & Moment)[][]): Step[] {
   return counts.map( (c) => {
     //const finder: (im: (Item & Moment)[]) => (Item & Moment) = (seq) => seq.find((item) => item.moment == c.moment);
     //const reducer: (im: Item & Moment) => Item = (im) => ({  type: im.type, origin: im.origin, grob: im.grob });
@@ -252,9 +203,6 @@ function isPlayed(item: Item): boolean {
   return item.type == "note";
 }
 
-function isPlaceholder(step: Step): boolean {
-  return step.items.length == 0;
-}
 
 class StepContainer {
   steps: Step[];
@@ -280,11 +228,11 @@ class StepContainer {
     this.target = 0;
   }
 
-  get currentCount(): Count2 {
+  get currentCount(): Count {
     return this.steps[this.target].count;
   }
 
-  get previousCount(): Count2 | null {
+  get previousCount(): Count | null {
     if(this.target > 0) {
       return this.steps[this.target - 1].count;
     }
@@ -301,7 +249,7 @@ class StepContainer {
     return this.steps[this.target].items;
   }
 
-  applyToCounts(func: (c: Count2) => void) {
+  applyToCounts(func: (c: Count) => void) {
     this.steps.map((s) => s.count).forEach(func);
   }
 
@@ -323,7 +271,7 @@ interface ParsedData {
 
 // Mutates the SVG
 function parseData(svg: SVGElement, events: string, handIDs: string[]): ParsedData {
-  const parsedEvents = parseLilypondEvents2(events);
+  const parsedEvents = parseLilypondEvents(events);
   removeEmptyGTags(svg);
   sortByPosition(svg);
   sizeSVGByContent(svg);
@@ -336,105 +284,11 @@ function parseData(svg: SVGElement, events: string, handIDs: string[]): ParsedDa
 }
 
 
-function parseLilypondEvents(allEvents: string): PartialCountFromLilypondEvents[] {
-  let tokenized = allEvents.split('\n').map((line) => line.split('\t'));
-  let textEvents = tokenized.filter((line) => line[1] == "lyric");
-  return textEvents.map( (e) => ({ display: e[2], beat: parseFloat(e[0])}) );
-}
-
-function truncateToOneSequence(textEvents: PartialCountFromLilypondEvents[]): PartialCountFromLilypondEvents[] {
-  // -1 So we match with 0 using the strict inequality;
-  let maxBeat = -1;
-  return textEvents.filter( (val) => {
-    if(val.beat > maxBeat) {
-      maxBeat = val.beat;
-      return true;
-    }
-    else {
-      return false;
-    }
-  });
-}
-
-// This function relies on the parent being a <g> tag.
-// TODO: Move classes to the actual elements?
-function isRest(el: NoteheadElement | RestElement): boolean {
-  const parentG = el.parentElement;
-  return parentG.classList.contains("Rest");
-}
-
-function hasNote(el: CountElement): boolean {
-  const parentG = el.parentElement;
-  return !parentG.hasAttribute("data-placeholder");
-}
-
-// This function relies on the fact that elements have already been properly sorted by flow position
-// TODO: Move sorting here
-// This a mess :(
-function getDomCounts(parent: SVGElement): PartialCountFromDom[] {
-  const textElements = filterNodeList<CountElement>(parent, "g.LyricText > text");
-  const noteElements = filterNodeList<NoteheadElement | RestElement>(parent, "g.NoteHead > path, g.Rest > path");
-  let offset = 0;
-  return textElements.map((d, i) => {
-    let count: PartialCountFromDom;
-    if(hasNote(d)) {
-      count = {
-        text: d,
-        note: noteElements[i - offset],
-        hasNote: true,
-        isPlayed: !isRest(noteElements[i - offset])
-      }
-    }
-    else {
-      count = {
-        text: d,
-        note: null,
-        hasNote: false,
-        isPlayed: false
-      }
-      offset += 1;
-    }
-    return count;
-  });
-}
 
 
 
 
 
-function zipLilypondEventsAndDom(e: PartialCountFromLilypondEvents[], d: PartialCountFromDom[]): Count[] {
-  if(e.length != d.length) {
-    console.error("Lengths of Lilypond text events and corresponding DOM elements are mismatched.");
-  }
-  return e.map( (evt, index) => ({...evt, ...d[index]}));
-}
-
-class RenderedMusic {
-    musicSVG: SVGElement;
-    counts: Count[];
-
-    noteObjects: Note[];
-    constructor(_musicSVG: SVGElement, _lilypondEvents: string) {
-      this.musicSVG = _musicSVG;
-      removeEmptyGTags(this.musicSVG);
-      sortByPosition(this.musicSVG);
-      sizeSVGByContent(this.musicSVG);
-      
-      const lilyEvents = truncateToOneSequence(parseLilypondEvents(_lilypondEvents));
-      const domCounts = getDomCounts(this.musicSVG);
-      this.counts = zipLilypondEventsAndDom(lilyEvents, domCounts);
-
-      // console.log(this.counts);
-    }
-
-  get scoreWidth(): number {
-        return parseFloat(this.musicSVG.getAttribute("width"));
-  }
-
-  get content(): SVGElement {
-    return this.musicSVG;
-  }
-}
 
 
 
@@ -601,19 +455,13 @@ class Score {
 
 }
 
-
-
-function makeBoldWeight(el: SVGTextElement)         { el.setAttribute("font-weight", "bold"); }
-function makeNormalWeight(el: SVGTextElement)       { el.setAttribute("font-weight", "normal"); }
-function makeCountBig(el: SVGTextElement)           { el.setAttribute("font-size", BigCountSize.toString()); }
-function makeCountNormal(el: SVGTextElement)        { el.setAttribute("font-size", NormalCountSize.toString()); }
 function setColour(el: SVGElement, colour: string)  { el.setAttribute("fill", colour); }
-function enlargeCount(c: Count2) {
+function enlargeCount(c: Count) {
   c.text.setAttribute("font-weight", "bold");
   c.text.setAttribute("font-size", BigCountSize.toString());
 }
 
-function restoreCount(c: Count2) {
+function restoreCount(c: Count) {
   c.text.setAttribute("font-weight", "normal");
   c.text.setAttribute("font-size", NormalCountSize.toString());
 }
@@ -655,7 +503,7 @@ interface TimingInfo {
   beatsPerBar
 }
 
-class Animator2 {
+class Animator {
   context: AnimationContext;
   score: Score;
   scoreElement: HTMLDivElement;
@@ -690,7 +538,7 @@ class Animator2 {
     this.score = new Score(this.scoreElement, beatLengthMs / 4);
     this.steps.reset();
     this.steps.applyToNotes( (i) => setColour(i.grob, "black") );
-    this.steps.applyToCounts( (c) => makeNormalWeight(c.text) );
+    this.steps.applyToCounts( (c) => restoreCount(c) );
     this.metronome.start();
     enlargeCount(this.steps.currentCount);
    
@@ -744,198 +592,9 @@ class Animator2 {
   }
 }
 
-
-
-
-class Animator {
-  counts: Count[];
-  noteTimes: number[];
-  noteTimers: Timer[];
-  transitionTimes: number[];
-  transitionTimers: Timer[];
-  metronome: Metronome;
-  goalNote: number;
-  startTime: number;
-  inProgress: boolean = false;
-  sumScore: number | null = null;
-  elapsedPlayableNotes: number;
-  scoreElement: HTMLDivElement;
-  lastNoteWasAttempted: boolean = false;
-  timingWindow: number;
-  eventLoopTimer: Timer;
-  onKeyDown: (evt: Event) => void;
-
-  constructor(_counts: Count[], bpm: number, _scoreElement: HTMLDivElement) {
-    this.counts = _counts;
-    const beatLength = (60 / bpm) * 1000;
-    this.scoreElement = _scoreElement;
-
-    this.noteTimes = this.counts
-      .map( (c: Count) => c.beat )
-      .map( (t: number) => 4 * t * beatLength);
-    this.transitionTimes = this.counts
-      .slice(0, -1)
-      .map( (c: Count, i: number) => (c.beat + this.counts[i + 1].beat) / 2 )
-      .map( (t: number) => 4 * t * beatLength);
-    const finalRightWindow = 
-      this.noteTimes[this.noteTimes.length - 1] - 
-      this.transitionTimes[this.transitionTimes.length - 1];
-    this.transitionTimes[this.counts.length - 1] = this.noteTimes[this.noteTimes.length - 1] + finalRightWindow;
-
-    // Set colour of count based on whether the player should play the note. Faint for a rest, dark for a playable note.
-    this.counts.forEach( c => setColour(c.text, c.isPlayed ? "dark" : "lightGrey") );
-
-    const lastBeat = this.counts[this.counts.length - 1].beat;
-    this.metronome = new Metronome(lastBeat, 4, bpm);
-    this.timingWindow = beatLength / 4; // Set timing window to semiquaver.
-    this.onKeyDown = this.keyHandler.bind(this); // So the event listeners have a consistent reference.
-  }
-
-  start(event: Event) {
-    
-    if(this.inProgress) {
-      this.stop();
-    }
-
-    this.goalNote = 0;
-    this.sumScore = 0;
-    this.scoreElement.innerHTML = "";
-
-    this.counts
-      .filter( c => c.hasNote)
-      .forEach( c => setColour(c.note, "black") )
-    this.counts.forEach( c => makeNormalWeight(c.text));
-    
-    this.startTime = event.timeStamp;
-    this.elapsedPlayableNotes = 1;
-
-    
-    this.noteTimers = createTimersFromTimes(this.noteTimes, this.revealCount.bind(this));
-    this.transitionTimers = createTimersFromTimes(this.transitionTimes, this.nextGoal.bind(this));
-    this.metronome.start();
-
-    document.addEventListener("keypress", this.onKeyDown);
-    document.addEventListener("touchstart", this.onKeyDown);
-
-    this.inProgress = true;
-  }
-
-  stop() {
-    document.removeEventListener("keypress", this.onKeyDown);
-    document.removeEventListener("touchstart", this.onKeyDown);
-    this.metronome.stop();
-    
-    this.noteTimers.forEach( (t) => window.clearTimeout(t) );
-    this.transitionTimers.forEach( (t) => window.clearTimeout(t) );
-    this.inProgress = false;
-  }
-
-  revealCount(i: number) {
-    makeBoldWeight(this.counts[i].text);
-    makeCountBig(this.counts[i].text);
-
-    if(i > 0) makeCountNormal(this.counts[i-1].text); 
-  }
-
-  indicateMissed(el: NoteheadElement) {
-    setColour(el, "lightGrey");
-  }
-
-  nextGoal(i: number) {
-    if(this.counts[this.goalNote].isPlayed) {
-      this.elapsedPlayableNotes += 1;
-    }
-
-    const missedNote: boolean = !this.lastNoteWasAttempted && this.counts[this.goalNote].isPlayed;
-    if(missedNote) {
-      this.updateOverallScore(MissedNoteScore);
-      this.indicateMissed(this.counts[this.goalNote].note);
-    }
-    this.lastNoteWasAttempted = false;
-    if(i + 1 < this.counts.length) {
-      this.goalNote = i + 1;
-    }
-    else {
-      makeCountNormal(this.counts[i].text);
-      this.stop();
-    }
-  }
-
-  computeScore(pressTime) {
-    const timeSinceStart = pressTime - this.startTime;
-    //const window = this.transitionTimes[this.goalNote];
-    const window = this.timingWindow * 3;
-    const worstPossibleScore = this.goalNote == 0 ? window : window / 2;
-    const rawScore = this.noteTimes[this.goalNote] - timeSinceStart - 150;
-    const score = Math.pow(( 1 - (rawScore / worstPossibleScore)), DifficultyExponent);
-    // console.log('/------------------')
-    // console.log(`| TSS: ${timeSinceStart} PT: ${pressTime} ST: ${this.startTime}`)
-    // console.log(`| GT: ${this.noteTimes[this.goalNote]}`);
-    // console.log('\\------------------')
-
-    return score * 100;
-  }
-
-  setNoteColourToScore(score) {
-    let colour;
-    if      ( score < 85 )                  { colour = "red"; }
-    else if ( 85 <= score && score < 115 )  { colour = "darkGreen" }
-    else if ( 115 <= score )                { colour = "blue" }
-    setColour(this.counts[this.goalNote].note, colour);
-  }
-
-  updateOverallScore(newScore: number) {
-    const absoluteScore = 100 - Math.abs(newScore - 100);
-    
-    this.sumScore += absoluteScore;
-    const avg = this.sumScore / (this.elapsedPlayableNotes + 1);
-    this.scoreElement.innerHTML = `${avg.toFixed(2)}%`
-  }
-
-  keyHandler(evt: Event) {
-    if(this.counts[this.goalNote].isPlayed) {
-      const score = this.computeScore(evt.timeStamp);
-      this.updateOverallScore(score);
-      this.setNoteColourToScore(score);
-      console.log(`Score: ${score.toFixed(2)}%`);
-      this.lastNoteWasAttempted = true;
-    }
-    else {
-      // Add an extra one for this penalty
-      this.elapsedPlayableNotes += 1;
-      this.updateOverallScore(PlayedRestScore);
-    }
-  }
-
-}
-
 class Scene {
-    parent: HTMLDivElement;
-    music: RenderedMusic;
-    animator: Animator;
-
-
-    constructor(_parent: HTMLDivElement, musicGraphics: SVGElement, lilypondEvents: string) {
-      this.parent = _parent;
-      this.music = new RenderedMusic(musicGraphics, lilypondEvents);
-      let score = document.createElement("div");
-      
-      this.animator = new Animator(this.music.counts, 50, score);
-      let btn = document.createElement("button");
-      btn.innerHTML = "Start"
-      btn.onclick = this.animator.start.bind(this.animator);
-      
-      this.parent.appendChild(btn);
-      this.parent.appendChild(score);
-      this.parent.appendChild(document.createElement("br"));
-      this.parent.appendChild(this.music.content);
-    }
-
-}
-
-class Scene2 {
   parent: HTMLDivElement;
-  animator: Animator2;
+  animator: Animator;
 
 
   constructor(_parent: HTMLDivElement, musicGraphics: SVGElement, lilypondEvents: string, timing: TimingInfo) {
@@ -943,7 +602,7 @@ class Scene2 {
     const data = parseData(musicGraphics, lilypondEvents, ["LH", "RH", "AH"]);
     let score = document.createElement("div");
     
-    this.animator = new Animator2(data.container, score, timing);
+    this.animator = new Animator(data.container, score, timing);
     let btn = document.createElement("button");
     btn.innerHTML = "Start"
     btn.onclick = this.animator.start.bind(this.animator);
@@ -983,7 +642,7 @@ async function loadLilypondEvents(path: string): Promise<string> {
 
 // TODO Add more lifecycle methods
 class RhythmGame extends HTMLElement {
-  scene: Scene2;
+  scene: Scene;
 
   constructor() {
     super();
@@ -1011,7 +670,7 @@ class RhythmGame extends HTMLElement {
       const prefix = this.getAttribute("data-name");
       const resources = await this.getResources(`${prefix}.svg`, `${prefix}.notes`);
       const wrapper = document.createElement("div");
-      this.scene = new Scene2(wrapper, 
+      this.scene = new Scene(wrapper, 
                               resources.svg, 
                               resources.events, 
                               { beatsPerBar: beatsPerBar, tempo: tempo });
