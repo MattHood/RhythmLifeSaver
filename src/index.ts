@@ -3,13 +3,26 @@ import * as Tone from 'tone'
 const SVGNamespace = "http://www.w3.org/2000/svg";
 const LilypondSVGScaleFactor = 8;
 const LilypondSVGId = "lilysvg";
-const DifficultyExponent = 0.25;
+const DifficultyExponent = 1;
+const EarlyPercentage = 80;
+const LatePercentage = 120;
 const PlayedRestScore = 50;
 const MissedNoteScore = 50;
 const BigCountSize = 3.2;
 const NormalCountSize = 2.4696;
 
 const curry = ( fn: (i: number) => void, index: number ) => ( () => fn(index) );
+
+// DONE Move visual elements into component
+// DONE Style with Bulma
+// DONE Add durations to note structure
+// TODO Work out the required format for each of: 1) Calculating the scoring window from Count 2) Length of note playback from Note
+// DONE Use them for note playback length
+// TODO Use them for window calculation
+// TODO Triplets
+// DONE Last notes aren't greyed out from a miss. Transition()? Stop()?
+// DONE Make onMiss trigger
+// DONE Figure out why the score isn't updating
 
 // Turns the NodeList returned by querySelector into a regular array, 
 // via a predicate which retains an element upon evaluating true.
@@ -116,11 +129,14 @@ interface Moment {
 interface LilypondEvent {
   moment: number,
   origin: string,
-  type: string
+  type: string,
+  id: string,
+  duration: number
 }
 
 interface Count {
-  text: CountElement
+  text: CountElement,
+  duration: number
 }
 
 function isHands(input: string): input is Hands {
@@ -130,6 +146,7 @@ function isHands(input: string): input is Hands {
 interface Item {
   type: "note" | "rest",
   origin: Hands,
+  duration: number,
   grob: SVGPathElement
 }
 
@@ -140,11 +157,18 @@ interface Step {
   items: Item[]
 }
 
+function lilypondNoteToTone(lilynote: string) {
+  return lilynote + "n";
+}
+
+// Format:  Moment  Origin Type Id Duration
 function parseLilypondEvents(allEvents: string): LilypondEvent[] {
   const parse = (t: string[]): LilypondEvent => 
     ({moment: parseFloat(t[0]),
       origin: t[1],
-      type: t[2]});
+      type: t[2],
+      id: t[3],
+      duration: parseFloat(t[4])});
   return allEvents
     .split(   '\n' )
     .filter(  (line: string) => line.trim().length > 0 )
@@ -160,7 +184,7 @@ function getCounts(events: LilypondEvent[], parent: SVGElement): (Count & Moment
   const countEvents = events.filter( (evt) => evt.origin == "Counts");
   const countElements = filterNodeList<CountElement>(parent, "g.LyricText > text");
   console.assert(countEvents.length == countElements.length);
-  return countEvents.map( (evt, i) => ({text: countElements[i], moment: evt.moment}));
+  return countEvents.map( (evt, i) => ({text: countElements[i], moment: evt.moment, duration: evt.duration}));
 }
 
 // This function relies on the fact that elements have already been properly sorted by flow position
@@ -171,7 +195,8 @@ function getItemsWithId(events: LilypondEvent[], parent: SVGElement, id: string)
   const transformer = (evt: LilypondEvent,i: number): (Item & Moment) => 
     ({type: evt.type as "note" | "rest",
       origin: isHands(evt.origin) ? evt.origin : undefined,
-      moment: evt.moment, 
+      moment: evt.moment,
+      duration: evt.duration, 
       grob: itemElements[i]})
   console.assert(itemEvents.length == itemElements.length);
     return itemEvents.map( transformer );
@@ -187,13 +212,13 @@ function makeSteps(counts: (Count & Moment)[], ...items: (Item & Moment)[][]): S
       return ret;
     }
     function reducer (im: Item & Moment): Item {
-      return {  type: im.type, origin: im.origin, grob: im.grob };
+      return {  type: im.type, origin: im.origin, grob: im.grob, duration: im.duration };
     };
     const filtered = items.filter((arr) => arr.length != 0);
     const found = filtered.map(finder).filter((i) => i != undefined);
     return {
       moment: c.moment,
-      count: {text: c.text},
+      count: {text: c.text, duration: c.duration},
       items: found.length == 0 ? [] : found.map(reducer)
     };
   });
@@ -213,7 +238,7 @@ class StepContainer {
   advanceTarget() {
     if(this.target < this.steps.length - 1) {
       this.target += 1;
-    }
+    } 
   }
 
   get elapsedPlayableNotes(): number {
@@ -256,8 +281,6 @@ class StepContainer {
   applyToNotes(func: (n: Item) => void) {
     this.steps.map((s) => s.items).flat().filter((i) => i.type == "note").forEach(func);
   }
-
-  
 
   currentStepHasHand(hand: Hands): boolean {
     return this.steps[this.target].items.map((i) => i.origin).includes(hand);
@@ -353,6 +376,8 @@ const LHKeys = ["z"];
 const KeyEventType = "keydown";
 const TouchEventType = "touchstart";
 
+const handToNote: {[key in Hands]: string} = { "LH": "C4", "RH": "G4", "AH": "C4" };
+
 function xyProportions(x: number = 0, y: number = 0): {x: number, y: number} {
   const width = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
   const height = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
@@ -384,6 +409,7 @@ function registerInputEvents(func: EventHandler): EventCanceller {
 }
 
 function tempoToBeatLength(tempo): number { return (60 / tempo) * 1000 }
+function momentToMs(moment: number, tempo: number): number { return tempoToBeatLength(tempo) * moment * 4 }
 
 class Metronome {
   synth: Tone.MembraneSynth;
@@ -396,7 +422,7 @@ class Metronome {
   }
 
   start() {
-    const now = Tone.now();
+    const now = Tone.context.currentTime;
     this.times.forEach(
       (time) => {
         this.synth.triggerAttackRelease("C3", "32n", now + (time / 1000));
@@ -410,46 +436,57 @@ class Metronome {
 }
 
 class Score {
-  numerator: number;
-  denominator: number;
+  numerator: number = 0;
+  denominator: number = 0;
   element: HTMLDivElement;
   window: number;
 
   constructor(element: HTMLDivElement, window: number) {
-    (this.element = element).innerHTML = '';
+    (this.element = element).innerHTML = `Score:       `;
+    console.log(this.element);
     this.window = window;
   }
 
   updateScore() {
-    if(this.numerator && this.denominator) {
-      const percentage = (this.numerator / this.denominator) * 100;
+    console.log(`N: ${this.numerator} D: ${this.denominator}`);
+    if(this.denominator != 0) {
+      const percentage = this.numerator / this.denominator;
       this.element.innerHTML = `Score: ${percentage.toFixed(2)}%`
     }
   }
   onRedundant() {
+    console.log(`onRedundant`);
     this.numerator += PlayedRestScore;
     this.denominator += 1;
     this.updateScore();
   }
 
   onMiss() {
+    console.log(`onMiss`);
     this.numerator += MissedNoteScore;
     this.denominator += 1;
     this.updateScore();
   }
 
   onHit(pressTime: number, goalTime: number): number {
-    const diff = pressTime - goalTime;
-    const perc = 100 * diff / this.window;
-    this.numerator += Math.abs(perc);
+    const diff = goalTime - pressTime; // Late is negative
+    const ratio = 1 - diff / this.window; // Late is greater than 1
+
+    // For the average score, we don't care about early/late - just the absolute value scaled with difficulty.
+    const norm = 1 - Math.abs(ratio - 1);
+    this.numerator += 100 * Math.pow(norm, DifficultyExponent);
+    this.denominator += 1;
     this.updateScore();
-    console.log(`diff: ${diff}, perc: ${perc}`);
-    return perc;
+
+    // For the immediate score, we care about early, late, and don't scale for difficulty as this can be set by the configured thresholds 'EarlyPercantage' and 'LatePercentage'
+    // console.log(`diff: ${diff}, perc: ${ratio * 100}, norm: ${norm}, score: ${100 * Math.pow(norm, DifficultyExponent)}`);
+    return ratio * 100;
   }
 
   static getColourForScore(score: number): string {
-    if      ( score < 85 )                  { return "red"; }
-    else if ( 85 <= score && score < 115 )  { return "darkGreen"; }
+    if      ( score < EarlyPercentage )     { return "red"; }
+    else if ( EarlyPercentage <= score && 
+              score < LatePercentage      ) { return "darkGreen"; }
     else                                    { return "blue"; }
   }
 
@@ -500,7 +537,7 @@ class AnimationContext {
 
 interface TimingInfo {
   tempo: number,
-  beatsPerBar
+  beatsPerBar: number
 }
 
 class Animator {
@@ -512,6 +549,7 @@ class Animator {
   beatsPerBar: number;
   callbacks: TimerCallbacks;
   metronome: Metronome;
+  synth: Tone.PolySynth;
   constructor(steps: StepContainer, scoreElement: HTMLDivElement, timing: TimingInfo) {
     this.steps = steps;
     this.callbacks = {
@@ -527,6 +565,9 @@ class Animator {
     this.beatsPerBar = timing.beatsPerBar;
     const lastTimestamp = this.steps.steps[this.steps.steps.length - 1].moment;
     this.metronome = new Metronome(lastTimestamp, this.beatsPerBar, this.tempo);
+    Tone.getTransport().bpm.value = this.tempo;
+    this.synth = new Tone.PolySynth().toDestination();
+  
   }
 
   start(evt: Event) {
@@ -557,19 +598,37 @@ class Animator {
         setColour(i.grob, "lightGrey");
       }
     });
-
+    this.context.advance();
     this.steps.advanceTarget();
+    if(this.steps.target == this.steps.steps.length - 1) console.log("EQ");
 
   }
 
   stop() {
+    this.steps.currentNotes.filter((i) => i.type == "note").forEach((i) => {
+      const noneInput = this.context.handsPressed.length == 0;
+      if(noneInput || !this.context.handsPressed.includes(i.origin)) {
+        this.score.onMiss();
+        setColour(i.grob, "lightGrey");
+      }
+    });
+    restoreCount(this.steps.currentCount);
     this.context.cleanup();
     this.metronome.stop();
   }
 
   input(evt: Event) {
     const hands = convertEventToHands(evt);
+    // This line needs work. Won't trigger a sound on anything but defined RH LH keys. This is due to the input system generating "AH" for all notes
+    hands.filter((h) => h != "AH")
+      .forEach( (h) => {
+        const note = this.steps.currentNotes.filter(i => i.type == "note" && i.origin == h);
+        let duration = note.length == 0 ? "16n" : (momentToMs(note[0].duration, this.tempo) / 1000) * 0.5;
+        this.synth.triggerAttackRelease(handToNote[h], duration, Tone.context.currentTime)
+      });
+
     const activeNotes = this.steps.currentNotes;
+    if(activeNotes.length == 0) this.score.onRedundant();
     activeNotes.forEach( (i) => {
         if(hands.includes(i.origin)) {
           if(i.type == "note")
@@ -580,7 +639,7 @@ class Animator {
              const score = this.score.onHit(pressTime, goalTime);
              setColour(i.grob, Score.getColourForScore(score));
            }
-           else {
+           else if(i.type) {
              //redundant
              this.score.onRedundant();
            }
@@ -607,10 +666,14 @@ class Scene {
     btn.innerHTML = "Start"
     btn.onclick = this.animator.start.bind(this.animator);
     
-    this.parent.appendChild(btn);
+    //this.parent.appendChild(btn);
     this.parent.appendChild(score);
     this.parent.appendChild(document.createElement("br"));
     this.parent.appendChild(data.sortedSVG);
+  }
+
+  start() {
+    this.animator.start.bind(this.animator)();
   }
 
 }
@@ -642,7 +705,9 @@ async function loadLilypondEvents(path: string): Promise<string> {
 
 // TODO Add more lifecycle methods
 class RhythmGame extends HTMLElement {
-  scene: Scene;
+  //scene: Scene;
+  animator: Animator;
+  
 
   constructor() {
     super();
@@ -669,18 +734,43 @@ class RhythmGame extends HTMLElement {
     if(this.hasAttribute("data-name")) {
       const prefix = this.getAttribute("data-name");
       const resources = await this.getResources(`${prefix}.svg`, `${prefix}.notes`);
-      const wrapper = document.createElement("div");
-      this.scene = new Scene(wrapper, 
-                              resources.svg, 
-                              resources.events, 
-                              { beatsPerBar: beatsPerBar, tempo: tempo });
-      this.shadowRoot.append(wrapper);
+      const data = parseData(resources.svg, resources.events, ["LH", "RH", "AH"]);
+      //const wrapper = this.shadowRoot.querySelector("div#wrapper") as HTMLDivElement;
+      // this.scene = new Scene(wrapper, 
+      //                         resources.svg, 
+      //                         resources.events, 
+      //                         { beatsPerBar: beatsPerBar, tempo: tempo });
+      //this.shadowRoot.append(wrapper);
+      const timing = { beatsPerBar: beatsPerBar, tempo: tempo };
+
+      const template = document.createElement("template");
+      template.innerHTML = `
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css">
+        <div class="container">
+          <div class="box">
+            <button class="button is-success" id="start">Start</button>
+            <div id="score">Score: </div>
+          </div></br>
+          <div id="svg" class="container box is-outlined"></div>
+        </div>
+
+      `
+      this.shadowRoot.appendChild(template.content.cloneNode(true));
+      
+      const QS = (selector: string) => this.shadowRoot.querySelector(selector); 
+
+      const SVGWrapper = QS("div#svg") as HTMLDivElement;
+      SVGWrapper.appendChild(data.sortedSVG);
+      const scoreWrapper = QS("div#score") as HTMLDivElement;
+      this.animator = new Animator(data.container, scoreWrapper, timing);
+      const button = QS("button#start") as HTMLButtonElement;
+      button.innerHTML = "Start"
+      button.onclick = this.animator.start.bind(this.animator);
+      
     }
     
   }
 }
 
 window.customElements.define("rhythm-game", RhythmGame);
-
-//const parent = <HTMLDivElement>document.querySelector("div#music-canvas");
-//const scene = new Scene(parent);

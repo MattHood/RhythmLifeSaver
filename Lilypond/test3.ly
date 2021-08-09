@@ -1,17 +1,20 @@
 \version "2.20.0"
-\include "template.ly"
+title = #"test3"
+
+\include "common.ly"
 
 \score {
     
-    \new RhythmicStaff {
-      \relative c' {
+    \new RhythmicStaff \with { instrumentName = #"AH" } {
+      %\relative c' {
                 \time 4/4
                 <<
-                    \new Voice = "rhythm" {
+                  
+                   \new Voice = "rhythm" {
                          r4 r r r |          
                          c2     c16 c c c   c16 c c8 |
                          c4      c8 c   r8 c16 c   c16 c c c
-                    }
+                   }
 
                     % \new Voice = "counting" {
                     %      \hide NoteHead
@@ -31,14 +34,14 @@
                     %   "1" "2" "+"   "3" "+" "a"   "4" "e" "+" "a" 
                     % }
 
-                    \new Lyrics \lyricmode {
+                    \new Lyrics \with { instrumentName = "Counts" } \lyricmode  {
                       "1"4 "2"4 "3"4 "4"4
                       "1"4 \PH "2"4 "3"16 "e" "+" "a" "4"16 "e" "+"8 
                       "1"4 "2"8 "+"  "3"8 "+"16 "a"   "4"16 "e" "+" "a" 
                     }
                 >>
                 
-      } 
+      %} 
       
     }
     

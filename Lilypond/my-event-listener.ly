@@ -43,14 +43,15 @@ staff has an instrument name.  If the staff has no instrument
 name, it uses "unnamed-staff" for that part of the filename."
    (let* ((inst-name (ly:context-property context 'instrumentName)))
      (string-concatenate (list
-                          (substring (object->string (command-line))
+                          ;(substring (object->string (command-line))
                            ;; filename without .ly part
-                           (+ (string-rindex (object->string (command-line)) #\sp) 2)
-                           (- (string-length (object->string (command-line))) 5))
+                           ;(+ (string-rindex (object->string (command-line)) #\sp) 2)
+                           ;(- (string-length (object->string (command-line))) 5))
                           ;"-"
                           ;(if (string? inst-name)
                           ;    inst-name
                           ;  "unnamed-staff")
+                          title
                           ".notes"))))
 
 #(define (format-moment moment)
@@ -113,14 +114,16 @@ as an engraver for convenience."
 
 
 %%% main functions
-
+% Format:  Moment  Origin Type Id Duration
 #(define (format-rest engraver event)
    (print-line engraver
                "rest"
-               (ly:duration->string
-                (ly:event-property event 'duration))
+               "NA"
+               ;(ly:duration->string
+               ; (ly:event-property event 'duration))
                (format-moment (ly:duration-length
-                               (ly:event-property event 'duration)))))
+                               (ly:event-property event 'duration)))
+               ))
 
 #(define (format-note engraver event)
    (let* ((origin (ly:input-file-line-char-column
@@ -130,8 +133,8 @@ as an engraver for convenience."
                  ;; get a MIDI pitch value.
                  (+ 60 (ly:pitch-semitones
                         (ly:event-property event 'pitch)))
-                 (ly:duration->string
-                  (ly:event-property event 'duration))
+                 ;(ly:duration->string
+                  ;(ly:event-property event 'duration))
                  (format-moment (ly:duration-length
                                  (ly:event-property event 'duration)))
                   ;(ly:event-property event 'metronome-count)
@@ -206,15 +209,24 @@ as an engraver for convenience."
                  left-text)))
 
 %%%%  My additions
+% Format:  Moment  Origin Type Id Duration
  #(define (format-lyric engraver event)
    (print-line engraver
                "lyric"
-               (ly:event-property event 'text)))
+               (ly:event-property event 'text)
+               ;(ly:duration->string
+                ;(ly:event-property event 'duration))
+                (format-moment (ly:duration-length
+                                (ly:event-property event 'duration)))
+                ))
 
 
 %%%% The actual engraver definition: We just install some listeners so we
 %%%% are notified about all notes and rests. We don't create any grobs or
 %%%% change any settings.
+
+
+% Format:  Moment  Origin Type Id Duration
 
 \layout {
    \context {

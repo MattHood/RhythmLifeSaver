@@ -1,5 +1,8 @@
 \version "2.20.0"
-\include "template.ly"
+%%% Title must be the same as the filename, without '.ly'. E.g., 'song.ly' & 'title = #"song"'
+title = #"test4"
+
+\include "common.ly"
 
 \score {
     \new GrandStaff <<

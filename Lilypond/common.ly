@@ -57,6 +57,7 @@ SvgAddClassName =
     \context {
       \Score \consists \SvgAddClassName
       \numericTimeSignature
+      \remove "Instrument_name_engraver"
       %\override NoteHead.output-attributes = #'((class . "notehead"))
       %\override StaffSymbol.output-attributes = #'((class . "staff"))
       %\override Clef.output-attributes = #'((class . "clef"))
